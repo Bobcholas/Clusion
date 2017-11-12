@@ -63,7 +63,7 @@ public class TestSSEwSU {
 		while (!isDone) {
 			System.out.print(">> ");
 			String command = input.readLine();
-			if (command == "\n")
+			if (command.equals(""))
 				continue;
 
 			String[] splitCommand = command.split(" ");
@@ -138,7 +138,10 @@ public class TestSSEwSU {
 	
 					Collection<String> documentNames = sse.query(username, keyword);
 					if (documentNames != null) {
-						System.out.println(documentNames.size() + " documents found: " + documentNames.toString());
+						System.out.print(documentNames.size() + " documents found: ");
+						for (String docName : documentNames)
+							System.out.print(docName + " ");
+						System.out.print("\n");
 					}
 				}
 				break;

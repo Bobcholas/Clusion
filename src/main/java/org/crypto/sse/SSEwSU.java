@@ -43,6 +43,7 @@ import com.google.common.collect.Multimap;
 
 public class SSEwSU {
 
+	public final static String START_STRING = "STARTSTRING";
 	public final static int securityParameter = 128;
 	public final static int idLength = 128;
 	public final BigInteger fieldOrder;
@@ -86,13 +87,13 @@ public class SSEwSU {
 		// must be in F_p for prime p
 		BigInteger tmp = new BigInteger(CryptoPrimitives.generateHmac(key, x));
 		byte[] result = tmp.mod(fieldOrder).toByteArray(); 
-		System.out.println("F(" + Arrays.toString(key) + ", " + Arrays.toString(x) + ") = " + Arrays.toString(result));
+//		System.out.println("F(" + Arrays.toString(key) + ", " + Arrays.toString(x) + ") = " + Arrays.toString(result));
 		return result;
 	}
 
 	public byte[] G(byte[] key, byte[] x) throws UnsupportedEncodingException { 
 		byte[] result = CryptoPrimitives.generateHmac(key, x);
-		System.out.println("G(" + Arrays.toString(key) + ", " + Arrays.toString(x) + ") = " + Arrays.toString(result));
+//		System.out.println("G(" + Arrays.toString(key) + ", " + Arrays.toString(x) + ") = " + Arrays.toString(result));
 		return result;
 	}
 
@@ -198,7 +199,7 @@ public class SSEwSU {
 					BigInteger tmp = new BigInteger(F(document.Kd2, document.documentID));
 					BigInteger tmp2 = new BigInteger(F(document.Kd1, wordToID(word)));
 					byte[] xCT = (tmp.multiply(tmp2)).mod(fieldOrder).toByteArray();
-					byte[] yCT = Encrypt(document.encKey, documentName);
+					byte[] yCT = Encrypt(document.encKey, START_STRING + documentName);
 					encryptedMM.put(ByteBuffer.wrap(xCT), yCT);
 				}
 			}
@@ -296,12 +297,21 @@ public class SSEwSU {
 			Set<byte[]> queryResponse = this.server.search(queryCiphertexts);
 
 			// decrypt response from server
-			Collection<String> result = new ArrayList<String>();
+			Collection<String> result = new HashSet<String>();
 			for (byte[] encryptedDocMetadata : queryResponse) {
 				// HOW TO KNOW WHICH DOCUMENT A RESPONSE IS FOR (in order to decrypt it w/ the right key)
 				// need to return docID too?
-				// FOR NOW: ASSUME JUST 1 FILE
-				result.add(Decrypt(accessList.get(0).encKey, encryptedDocMetadata));
+				// FOR NOW: loop through decryption keys that we have until we find START_STRING
+				
+				for (DocumentInfo document : this.accessList) {
+					String decrypt = Decrypt(document.encKey, encryptedDocMetadata);
+					if (decrypt.substring(0, START_STRING.length()).equals(START_STRING)) {
+						String metadata = decrypt.substring(START_STRING.length());
+						result.add(metadata);
+						System.out.println(metadata + " ");
+						break;
+					}
+				}
 			}
 			return result;
 		}
