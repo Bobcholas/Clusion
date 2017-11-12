@@ -48,6 +48,8 @@ public class SSEwSU {
 	public final static int idLength = 128;
 	public final BigInteger fieldOrder;
 
+	public final static double nano = 1000000000.0;
+	
 	private Server server;
 	private Manager manager;
 
@@ -60,7 +62,13 @@ public class SSEwSU {
 		
 		this.server = new Server();
 		this.manager = new Manager();
+		
+		long startTime = System.nanoTime();
 		this.manager.setup(this.server, mm);
+		double elapsed = ((System.nanoTime() - startTime) / nano);
+		System.out.println(String.format("Setup took %.2fms", 1000 * elapsed));
+		System.out.println(String.format("%d document word pairs inserted [%.4fms/pair]", 
+				this.server.encryptedMM.size(), 1000 * elapsed / this.server.encryptedMM.size()));
 	}
 
 	public void enroll(String username) throws UserAlreadyExists {
@@ -116,9 +124,6 @@ public class SSEwSU {
 	}
 
 	class Server {
-		
-		// /home/sorin/tmp/clusion_test
-		// /home/sorin/tmp/simple_test
 
 		// map: EncryptedDocumentWordPair -> EncryptedDocumentMetadata
 		Map<ByteBuffer, byte[]> encryptedMM;
@@ -175,6 +180,7 @@ public class SSEwSU {
 			masterKeys = new byte[3][];
 		}
 
+		
 		public void setup(Server server, Multimap<String, String> mm) throws InvalidKeyException, InvalidAlgorithmParameterException, NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException, IOException {
 			this.server = server;
 
@@ -184,6 +190,8 @@ public class SSEwSU {
 
 			// set up encrypted map
 			Map<ByteBuffer, byte[]> encryptedMM = new HashMap<ByteBuffer, byte[]>();
+			/* Building from existing reverse Index
+			 * 
 			for (String word : mm.keySet()) {
 				for (String documentName : mm.get(word)) {
 					if (!documents.containsKey(documentName)) {
@@ -203,7 +211,29 @@ public class SSEwSU {
 					encryptedMM.put(ByteBuffer.wrap(xCT), yCT);
 				}
 			}
-
+			*/
+			
+			// Building from corpus of documents
+			for (String documentName : mm.keySet()) {
+				byte[] docID = documentNameToID(documentName);
+				DocumentInfo document = 
+						new DocumentInfo(docID,
+							F(masterKeys[0], docID),
+							F(masterKeys[1], docID),
+							G(masterKeys[2], docID));
+				
+				documents.put(documentName, document);
+				
+				for (String word : mm.get(documentName)) {
+					// TODO use EC generator
+					BigInteger tmp = new BigInteger(F(document.Kd2, document.documentID));
+					BigInteger tmp2 = new BigInteger(F(document.Kd1, wordToID(word)));
+					byte[] xCT = (tmp.multiply(tmp2)).mod(fieldOrder).toByteArray();
+					byte[] yCT = Encrypt(document.encKey, START_STRING + documentName);
+					encryptedMM.put(ByteBuffer.wrap(xCT), yCT);
+				}
+			}
+			
 			// TODO randomize order of map (?)
 
 			// send encrypted map to server

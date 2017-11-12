@@ -54,10 +54,12 @@ public class TestSSEwSU {
 		// Construction of the global multi-map
 		System.out.println("\nBeginning of Encrypted Multi-map creation \n");
 
-		SSEwSU sse = new SSEwSU(TextExtractPar.lp1);
-		
-		System.out.println(HELP_TEXT + "\n");
+		SSEwSU sse = new SSEwSU(TextExtractPar.lp2);
+
 		System.out.println(TextExtractPar.lp1);
+		System.out.println(TextExtractPar.lp2);
+		
+		System.out.println("\n" + HELP_TEXT);
 
 		boolean isDone = false;
 		while (!isDone) {
@@ -86,7 +88,7 @@ public class TestSSEwSU {
 				break;
 			case "s":
 			case "share":
-				{			
+				{
 					if (splitCommand.length < 3) {
 						System.out.println("Expected format: (s)hare <document name> [<username>]+");
 						break;
@@ -95,8 +97,11 @@ public class TestSSEwSU {
 					for (int u = 2; u < splitCommand.length; ++u) {
 						String username = splitCommand[u];
 						try {
+							long startTime = System.nanoTime();
 							sse.shareDoc(documentName, username);
-							System.out.println("Successfully Shared " + documentName + " with " + username);
+							double elapsed = ((System.nanoTime() - startTime) / SSEwSU.nano);
+							System.out.println("[" + String.format("%.2fms", 1000 * elapsed) + 
+									"]: Successfully Shared " + documentName + " with " + username);
 						} catch (UserDoesntExist e) {
 							System.out.println("Error: user " + username + " does not exist");
 						} catch (DocumentDoesntExist e) {
@@ -116,8 +121,11 @@ public class TestSSEwSU {
 					for (int u = 2; u < splitCommand.length; ++u) {
 						String username = splitCommand[u];
 						try {
+							long startTime = System.nanoTime();
 							sse.unshareDoc(documentName, username);
-							System.out.println("Successfully unshared " + documentName + " with " + username);
+							double elapsed = ((System.nanoTime() - startTime) / SSEwSU.nano);
+							System.out.println("[" + String.format("%.2fms", 1000 * elapsed) + 
+									"]: Successfully Unshared " + documentName + " with " + username);
 						} catch (UserDoesntExist e) {
 							System.out.println("Error: user " + username + " does not exist");
 						} catch (DocumentDoesntExist e) {
@@ -136,9 +144,12 @@ public class TestSSEwSU {
 					String username = splitCommand[1];
 					String keyword = splitCommand[2];
 	
+					long startTime = System.nanoTime();
 					Collection<String> documentNames = sse.query(username, keyword);
+					double elapsed = ((System.nanoTime() - startTime) / SSEwSU.nano);
+					
 					if (documentNames != null) {
-						System.out.print(documentNames.size() + " documents found: ");
+						System.out.print("[" + String.format("%.2fms", 1000 * elapsed) + "]: " + documentNames.size() + " documents found: ");
 						for (String docName : documentNames)
 							System.out.print(docName + " ");
 						System.out.print("\n");
