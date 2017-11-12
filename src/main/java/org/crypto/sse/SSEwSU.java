@@ -17,7 +17,6 @@
 package org.crypto.sse;
 
 import java.io.IOException;
-import java.io.Serializable;
 import java.io.UnsupportedEncodingException;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
@@ -26,7 +25,6 @@ import java.security.InvalidKeyException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
-import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -39,26 +37,28 @@ import java.util.Set;
 
 import javax.crypto.NoSuchPaddingException;
 
+import org.crypto.sse.CryptoPrimitives.RewritableDeterministicHash;
+
 import com.google.common.collect.Multimap;
 
-public class SSEwSU {
+public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 
 	public final static String START_STRING = "STARTSTRING";
-	public final static int securityParameter = 128;
 	public final static int idLength = 128;
-	public final BigInteger fieldOrder;
 
 	public final static double nano = 1000000000.0;
+
+	public final int securityParameter;
+	public final RDH rdh;
 	
 	private Server server;
 	private Manager manager;
 
-	public SSEwSU(Multimap<String, String> mm) 
+	public SSEwSU(Multimap<String, String> mm, RDH rdh, int securityParameter) 
 			throws InvalidKeyException, InvalidAlgorithmParameterException, NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException, IOException {
 
-		// TODO select random group generator + set up EC
-		// TODO genericize ^ to allow for arbitrary rewritable-hash
-		fieldOrder = BigInteger.probablePrime(securityParameter, new SecureRandom());
+		this.securityParameter = securityParameter;
+		this.rdh = rdh;
 		
 		this.server = new Server();
 		this.manager = new Manager();
@@ -94,15 +94,11 @@ public class SSEwSU {
 	public byte[] F(byte[] key, byte[] x) throws UnsupportedEncodingException { 
 		// must be in F_p for prime p
 		BigInteger tmp = new BigInteger(CryptoPrimitives.generateHmac(key, x));
-		byte[] result = tmp.mod(fieldOrder).toByteArray(); 
-//		System.out.println("F(" + Arrays.toString(key) + ", " + Arrays.toString(x) + ") = " + Arrays.toString(result));
-		return result;
+		return tmp.mod(rdh.getFieldOrder()).toByteArray(); 
 	}
 
 	public byte[] G(byte[] key, byte[] x) throws UnsupportedEncodingException { 
-		byte[] result = CryptoPrimitives.generateHmac(key, x);
-//		System.out.println("G(" + Arrays.toString(key) + ", " + Arrays.toString(x) + ") = " + Arrays.toString(result));
-		return result;
+		return CryptoPrimitives.generateHmac(key, x);
 	}
 
 	public byte[] Encrypt(byte[] key, String x) throws InvalidKeyException, InvalidAlgorithmParameterException, NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException, IOException { 
@@ -113,11 +109,11 @@ public class SSEwSU {
 		return new String(CryptoPrimitives.decryptAES_CTR_String(x, key)); 
 	}
 
-	static class Query {
+	class Query {
 		byte[] authTokenID;
-		byte[] queryCiphertext;
+		CT_G queryCiphertext;
 
-		Query(byte[] tokID, byte[] ct) {
+		Query(byte[] tokID, CT_G ct) {
 			this.authTokenID = tokID;
 			this.queryCiphertext = ct;
 		}
@@ -126,13 +122,13 @@ public class SSEwSU {
 	class Server {
 
 		// map: EncryptedDocumentWordPair -> EncryptedDocumentMetadata
-		Map<ByteBuffer, byte[]> encryptedMM;
+		Map<CT_G, byte[]> encryptedMM;
 		// map: authTokenID -> authToken
 		Map<ByteBuffer, byte[]> authTokenMap;
 
 		Server() { }
 
-		public void setup(Map<ByteBuffer, byte[]> encryptedMM) {
+		public void setup(Map<CT_G, byte[]> encryptedMM) {
 			this.encryptedMM = encryptedMM;
 			this.authTokenMap = new HashMap<ByteBuffer, byte[]>();
 		}
@@ -140,16 +136,13 @@ public class SSEwSU {
 		public Set<byte[]> search(Set<Query> queries) {
 			Set<byte[]> resultSet = new HashSet<byte[]>();
 			for (Query query : queries) {
-				System.out.println("Looking for AuthTokenID: " + Arrays.toString(query.authTokenID));
 				byte[] authToken = authTokenMap.get(ByteBuffer.wrap(query.authTokenID));
 				if (authToken == null) {
 					continue;
 				}
 
-				BigInteger tmp = new BigInteger(query.queryCiphertext);
-				BigInteger tmp2 = new BigInteger(authToken);
-				byte[] xCT = (tmp.multiply(tmp2)).mod(fieldOrder).toByteArray();
-				byte[] yCT = encryptedMM.get(ByteBuffer.wrap(xCT));
+				CT_G xCT = rdh.Apply(query.queryCiphertext, authToken);
+				byte[] yCT = encryptedMM.get(xCT);
 				if (yCT != null)
 					resultSet.add(yCT);
 			}
@@ -157,7 +150,6 @@ public class SSEwSU {
 		}
 
 		public void giveAccess(byte[] authTokID, byte[] authTok) {
-			System.out.println("Added " + Arrays.toString(authTokID) + " to access list");
 			authTokenMap.put(ByteBuffer.wrap(authTokID), authTok);
 		}
 
@@ -189,7 +181,7 @@ public class SSEwSU {
 				masterKeys[i] = CryptoPrimitives.randomBytes(securityParameter);
 
 			// set up encrypted map
-			Map<ByteBuffer, byte[]> encryptedMM = new HashMap<ByteBuffer, byte[]>();
+			Map<CT_G, byte[]> encryptedMM = new HashMap<CT_G, byte[]>();
 			/* Building from existing reverse Index
 			 * 
 			for (String word : mm.keySet()) {
@@ -225,12 +217,9 @@ public class SSEwSU {
 				documents.put(documentName, document);
 				
 				for (String word : mm.get(documentName)) {
-					// TODO use EC generator
-					BigInteger tmp = new BigInteger(F(document.Kd2, document.documentID));
-					BigInteger tmp2 = new BigInteger(F(document.Kd1, wordToID(word)));
-					byte[] xCT = (tmp.multiply(tmp2)).mod(fieldOrder).toByteArray();
+					CT_G xCT = rdh.H(F(document.Kd2, document.documentID), F(document.Kd1, wordToID(word)));
 					byte[] yCT = Encrypt(document.encKey, START_STRING + documentName);
-					encryptedMM.put(ByteBuffer.wrap(xCT), yCT);
+					encryptedMM.put(xCT, yCT);
 				}
 			}
 			
@@ -265,9 +254,7 @@ public class SSEwSU {
 			DocumentInfo document = documents.get(documentName);
 
 			// compute authorization token
-			BigInteger tmp = new BigInteger(F(document.Kd2, document.documentID));
-			BigInteger tmp2 = new BigInteger(F(user.userKeys[0], document.documentID));
-			byte[] authToken = (tmp.multiply(tmp2.modInverse(fieldOrder))).mod(fieldOrder).toByteArray();
+			byte[] authToken = rdh.GenToken(F(document.Kd2, document.documentID), F(user.userKeys[0], document.documentID));
 
 			// compute authorization token id
 			byte[] authTokenID = F(user.userKeys[1], document.documentID);
@@ -315,11 +302,7 @@ public class SSEwSU {
 				// compute auth token
 				byte[] authTokenID = F(userKeys[1], document.documentID);
 				// compute query ciphertext
-				// TODO USE EC
-				BigInteger tmp = new BigInteger(F(document.Kd1, wordToID(keyword)));
-				BigInteger tmp2 = new BigInteger(F(userKeys[0], document.documentID));
-				byte[] queryCT = (tmp.multiply(tmp2)).mod(fieldOrder).toByteArray();
-
+				CT_G queryCT = rdh.H(F(document.Kd1, wordToID(keyword)), F(userKeys[0], document.documentID));
 				queryCiphertexts.add(new Query(authTokenID, queryCT));
 			}
 

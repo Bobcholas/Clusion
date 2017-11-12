@@ -30,13 +30,21 @@ import org.bouncycastle.crypto.macs.CMac;
 import org.bouncycastle.crypto.macs.HMac;
 import org.bouncycastle.crypto.params.KeyParameter;
 import org.bouncycastle.crypto.prng.ThreadedSeedGenerator;
+import org.bouncycastle.jce.ECNamedCurveTable;
+import org.bouncycastle.jce.spec.ECNamedCurveParameterSpec;
+import org.bouncycastle.jce.spec.ECNamedCurveSpec;
+import org.bouncycastle.math.ec.ECPoint;
 
 import javax.crypto.*;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.PBEKeySpec;
 import javax.crypto.spec.SecretKeySpec;
 import java.io.*;
+import java.math.BigInteger;
+import java.nio.ByteBuffer;
 import java.security.*;
+import java.security.spec.ECGenParameterSpec;
+import java.security.spec.ECParameterSpec;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.KeySpec;
 import java.util.Arrays;
@@ -813,5 +821,89 @@ public class CryptoPrimitives {
 		System.arraycopy(b, 0, c, aLen, bLen);
 		return c;
 	}
+	
+	// ***********************************************************************************************//
+	///////////////////// Rewritable Deterministic Hashing /////////////////////////////
+	// ***********************************************************************************************//
 
+	interface RewritableDeterministicHash<G> 
+	{
+		G H(byte[] A, byte[] B);
+		byte[] GenToken(byte[] C, byte[] D);
+		G Apply(G ct, byte[] token);
+		
+		BigInteger getFieldOrder();
+	}
+	
+	public static class NaiveRDH implements RewritableDeterministicHash<ByteBuffer> 
+	{
+		public final BigInteger fieldOrder;
+		
+		NaiveRDH(int securityParameter) 
+		{
+			fieldOrder = BigInteger.probablePrime(securityParameter, new SecureRandom());
+		}
+		
+		@Override
+		public ByteBuffer H(byte[] A, byte[] B) {
+			BigInteger tmp = new BigInteger(A);
+			BigInteger tmp2 = new BigInteger(B);
+			return ByteBuffer.wrap((tmp.multiply(tmp2)).mod(fieldOrder).toByteArray());
+		}
+
+		@Override
+		public byte[] GenToken(byte[] C, byte[] D) {
+			BigInteger tmp = new BigInteger(C);
+			BigInteger tmp2 = new BigInteger(D);
+			return (tmp.multiply(tmp2.modInverse(fieldOrder))).mod(fieldOrder).toByteArray();
+		}
+
+		@Override
+		public ByteBuffer Apply(ByteBuffer ct, byte[] token) {
+			return H(ct.array(), token);
+		}
+
+		@Override
+		public BigInteger getFieldOrder() {
+			return fieldOrder;
+		}
+		
+	}
+	
+	public static class ECRDH implements RewritableDeterministicHash<ECPoint> 
+	{
+		public final BigInteger fieldOrder;
+		public final ECPoint generator;
+		
+		ECRDH(ECNamedCurveParameterSpec params) { 
+			this.fieldOrder = params.getN();
+			this.generator = params.getG().multiply(new BigInteger(randomBytes(params.getCurve().getFieldSize())).mod(this.fieldOrder));
+		}
+
+		@Override
+		public ECPoint H(byte[] A, byte[] B) {
+			BigInteger tmp = new BigInteger(A);
+			BigInteger tmp2 = new BigInteger(B);
+			return this.generator.multiply(tmp.multiply(tmp2).mod(fieldOrder));
+		}
+
+		@Override
+		public byte[] GenToken(byte[] C, byte[] D) {
+			BigInteger tmp = new BigInteger(C);
+			BigInteger tmp2 = new BigInteger(D);
+			return (tmp.multiply(tmp2.modInverse(fieldOrder))).mod(fieldOrder).toByteArray();
+		}
+
+		@Override
+		public ECPoint Apply(ECPoint ct, byte[] token) {
+			return ct.multiply(new BigInteger(token));
+		}
+
+		@Override
+		public BigInteger getFieldOrder() {
+			return this.fieldOrder;
+		}
+		
+	}
+	
 }

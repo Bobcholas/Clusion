@@ -4,6 +4,7 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.nio.ByteBuffer;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
@@ -15,6 +16,10 @@ import java.util.Collection;
 
 import javax.crypto.NoSuchPaddingException;
 
+import org.bouncycastle.jce.ECNamedCurveTable;
+import org.bouncycastle.math.ec.ECPoint;
+import org.crypto.sse.CryptoPrimitives.ECRDH;
+import org.crypto.sse.CryptoPrimitives.NaiveRDH;
 import org.crypto.sse.SSEwSU;
 import org.crypto.sse.SSEwSU.DocumentDoesntExist;
 import org.crypto.sse.SSEwSU.UserAlreadyExists;
@@ -36,12 +41,6 @@ public class TestSSEwSU {
 			InvalidKeySpecException, IOException {
 
 		BufferedReader input = new BufferedReader(new InputStreamReader(System.in));
-		//
-		//		System.out.print("Enter your password : ");
-		//		String pass = input.readLine();
-		//
-		//		// generate keys
-		//		List<byte[]> listSK = IEX2Lev.keyGen(256, pass, "salt/salt", 100000);
 
 		System.out.print("Enter the relative path name of the folder that contains the files to make searchable: ");
 		String pathName = input.readLine();
@@ -54,7 +53,12 @@ public class TestSSEwSU {
 		// Construction of the global multi-map
 		System.out.println("\nBeginning of Encrypted Multi-map creation \n");
 
-		SSEwSU sse = new SSEwSU(TextExtractPar.lp2);
+		final int securityParameter = 128;
+		NaiveRDH rdh = new NaiveRDH(securityParameter);
+		ECRDH ecrdh = new ECRDH(ECNamedCurveTable.getParameterSpec("secp224r1"));
+		
+//		SSEwSU<ByteBuffer, NaiveRDH> sse = new SSEwSU<ByteBuffer, NaiveRDH>(TextExtractPar.lp2, rdh, securityParameter);
+		SSEwSU<ECPoint, ECRDH> sse = new SSEwSU<ECPoint, ECRDH>(TextExtractPar.lp2, ecrdh, securityParameter);
 
 		System.out.println(TextExtractPar.lp1);
 		System.out.println(TextExtractPar.lp2);
