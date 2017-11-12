@@ -32,7 +32,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-
+import java.util.Map.Entry;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
@@ -55,7 +55,6 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 	public final static int AES_IV_LENGTH = 16;
 	public final static int METADATA_LENGTH = 40;
 
-	public final MessageDigest digest;
 	public final int securityParameter;
 	public final RDH rdh;
 	
@@ -64,10 +63,6 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 
 	public SSEwSU(Multimap<String, String> mm, RDH rdh, int securityParameter) 
 			throws InvalidKeyException, InvalidAlgorithmParameterException, NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException, IOException, InterruptedException, ExecutionException {
-		
-		this.digest = MessageDigest.getInstance("SHA-256");
-		if (this.digest.getDigestLength() < idLengthBytes)
-			throw new InvalidAlgorithmParameterException();
 		
 		this.securityParameter = securityParameter;
 		this.rdh = rdh;
@@ -187,47 +182,55 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 		}
 		
 		public void setup(Server server, final Multimap<String, String> mm) 
-				throws InvalidKeyException, InvalidAlgorithmParameterException, NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException, IOException, InterruptedException, ExecutionException {
+				throws InvalidKeyException, InvalidAlgorithmParameterException, NoSuchAlgorithmException, 
+				NoSuchProviderException, NoSuchPaddingException, IOException, InterruptedException, ExecutionException {
 			
 			this.server = server;
 			
 			// select 3 master keys
 			for (int i = 0; i < 3; ++i)
 				masterKeys[i] = CryptoPrimitives.randomBytes(securityParameter);
+			
+			for (String documentName : mm.keySet()) {
+				byte[] docID = documentNameToID(documentName);
+				DocumentInfo document = 
+						new DocumentInfo(docID,
+							F(masterKeys[0], docID),
+							F(masterKeys[1], docID),
+							G(masterKeys[2], docID));
+				
+				documents.put(documentName, document);
+			}
 
-			int numThreads = Math.min(mm.keySet().size(), Runtime.getRuntime().availableProcessors());
+			List<Entry<String,String>> listOfDocWordPairs = new ArrayList<>(mm.entries());
+			int totalWork = listOfDocWordPairs.size();
+			int numThreads = Math.min(totalWork, Runtime.getRuntime().availableProcessors());
+			int workPerThread = totalWork / numThreads;
+			
 			ExecutorService service = Executors.newFixedThreadPool(numThreads);
-			List<String[]> inputs = new ArrayList<>(numThreads);
-			List<String> listOfDocumentNames = new ArrayList<>(mm.keySet());
+			List<Collection<Entry<String,String>>> inputs = new ArrayList<>(numThreads);
 			
 			for (int i = 0; i < numThreads; i++) {
-				String[] tmp;
+				Collection<Entry<String,String>> tmp;
 				if (i == numThreads - 1) {
-					tmp = new String[mm.keySet().size() / numThreads + mm.keySet().size() % numThreads];
-					for (int j = 0; j < mm.keySet().size() / numThreads + mm.keySet().size() % numThreads; j++) {
-						tmp[j] = listOfDocumentNames.get((mm.keySet().size() / numThreads) * i + j);
-					}
+					tmp = listOfDocWordPairs.subList(workPerThread * i, listOfDocWordPairs.size());
 				} else {
-					tmp = new String[mm.keySet().size() / numThreads];
-					for (int j = 0; j < mm.keySet().size() / numThreads; j++) {
-
-						tmp[j] = listOfDocumentNames.get((mm.keySet().size() / numThreads) * i + j);
-					}
+					tmp = listOfDocWordPairs.subList(workPerThread * i, workPerThread * (i + 1));
 				}
 				inputs.add(i, tmp);
-				System.out.println("Thread #" + (i + 1) + " gets documents " + Arrays.toString(tmp));
+				System.out.println("Thread #" + (i + 1) + " gets " + tmp.size() + " pairs");
 			}
 
 			System.out.println("End of Partitionning\n");
 
 			Map<CT_G, byte[]> encryptedMM = new HashMap<CT_G, byte[]>();
-			List<Future<Pair<Map<String, DocumentInfo>, Map<CT_G, byte[]>>>> futures = new ArrayList<>();
-			for (final String[] input : inputs) {
-				Callable<Pair<Map<String, DocumentInfo>, Map<CT_G, byte[]>>> callable = 
-						new Callable<Pair<Map<String, DocumentInfo>, Map<CT_G, byte[]>>>() {
+			List<Future<Map<CT_G, byte[]>>> futures = new ArrayList<>();
+			for (final Collection<Entry<String,String>> input : inputs) {
+				Callable<Map<CT_G, byte[]>> callable = 
+						new Callable<Map<CT_G, byte[]>>() {
 					
-					public Pair<Map<String, DocumentInfo>, Map<CT_G, byte[]>> call() throws Exception {
-						return encryptDocuments(input, mm);
+					public Map<CT_G, byte[]> call() throws Exception {
+						return encryptDocWords(input);
 					}
 					
 				};
@@ -236,9 +239,8 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 
 			service.shutdown();
 
-			for (Future<Pair<Map<String, DocumentInfo>, Map<CT_G, byte[]>>> future : futures) {
-				documents.putAll(future.get().fst);
-				encryptedMM.putAll(future.get().snd);
+			for (Future<Map<CT_G, byte[]>> future : futures) {
+				encryptedMM.putAll(future.get());
 			}
 			
 			// TODO randomize order of map (?)
@@ -247,27 +249,21 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 			this.server.setup(encryptedMM);
 		}
 		
-		public Pair<Map<String, DocumentInfo>, Map<CT_G, byte[]>> encryptDocuments(String[] docNames, final Multimap<String, String> mm) throws InvalidKeyException, InvalidAlgorithmParameterException, NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException, IOException {
+		public Map<CT_G, byte[]> encryptDocWords(final Collection<Entry<String,String>> documentWordPairs) 
+				throws InvalidKeyException, InvalidAlgorithmParameterException, NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException, IOException {
+			
 			// Build encrypted map from corpus of documents
-			Map<String, DocumentInfo> docs = new HashMap<String, DocumentInfo>();
 			Map<CT_G, byte[]> encryptedMM = new HashMap<CT_G, byte[]>();
-			for (String documentName : docNames) {
-				byte[] docID = documentNameToID(documentName);
-				DocumentInfo document = 
-						new DocumentInfo(docID,
-							F(masterKeys[0], docID),
-							F(masterKeys[1], docID),
-							G(masterKeys[2], docID));
-				
-				docs.put(documentName, document);
-				
-				for (String word : mm.get(documentName)) {
-					CT_G xCT = rdh.H(F(document.Kd2, document.documentID), F(document.Kd1, wordToID(word)));
-					byte[] yCT = Encrypt(document.encKey, START_STRING + documentName);
-					encryptedMM.put(xCT, yCT);
-				}
+			for (Entry<String,String> docWord : documentWordPairs) {
+				String documentName = docWord.getKey();
+				String word = docWord.getValue();
+				DocumentInfo document = documents.get(documentName);
+			
+				CT_G xCT = rdh.H(F(document.Kd2, document.documentID), F(document.Kd1, wordToID(word)));
+				byte[] yCT = Encrypt(document.encKey, START_STRING + documentName);
+				encryptedMM.put(xCT, yCT);
 			}
-			return new Pair<>(docs, encryptedMM);
+			return encryptedMM;
 		}
 
 		public User enroll(String username) throws UserAlreadyExists {
@@ -409,12 +405,13 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 		DocumentDoesntExist(String name) { this.name = name; }
 	}
 
-	public byte[] documentNameToID(String documentName) {
+	public byte[] documentNameToID(String documentName) throws NoSuchAlgorithmException {
+		MessageDigest digest = MessageDigest.getInstance("SHA-256");
 		byte[] hash = digest.digest(documentName.getBytes());
 		return Arrays.copyOf(hash, idLengthBytes);
 	}
 
-	public byte[] wordToID(String word) {
+	public byte[] wordToID(String word) throws NoSuchAlgorithmException {
 		return documentNameToID(word);
 	}
 
