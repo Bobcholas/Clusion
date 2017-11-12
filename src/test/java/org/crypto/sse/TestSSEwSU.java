@@ -11,6 +11,7 @@ import java.security.NoSuchProviderException;
 import java.security.spec.InvalidKeySpecException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.concurrent.ExecutionException;
 
 import javax.crypto.NoSuchPaddingException;
 
@@ -35,7 +36,7 @@ public class TestSSEwSU {
 	public static void main(String[] args) 
 			throws InvalidKeyException, InvalidAlgorithmParameterException, 
 			NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException, 
-			InvalidKeySpecException, IOException {
+			InvalidKeySpecException, IOException, InterruptedException, ExecutionException {
 
 		BufferedReader input = new BufferedReader(new InputStreamReader(System.in));
 
@@ -57,6 +58,7 @@ public class TestSSEwSU {
 //		SSEwSU<ByteBuffer, NaiveRDH> sse = new SSEwSU<ByteBuffer, NaiveRDH>(TextExtractPar.lp2, rdh, securityParameter);
 		SSEwSU<ECPoint, ECRDH> sse = new SSEwSU<ECPoint, ECRDH>(TextExtractPar.lp2, ecrdh, securityParameter);
 
+		System.out.println();
 		System.out.println(TextExtractPar.lp1);
 		System.out.println(TextExtractPar.lp2);
 		

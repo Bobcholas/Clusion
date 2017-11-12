@@ -34,12 +34,18 @@ import java.util.List;
 import java.util.Map;
 
 import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import javax.crypto.NoSuchPaddingException;
 
 import org.crypto.sse.CryptoPrimitives.RewritableDeterministicHash;
 
 import com.google.common.collect.Multimap;
+import com.sun.tools.javac.util.Pair;
 
 public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 
@@ -57,7 +63,7 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 	private Manager manager;
 
 	public SSEwSU(Multimap<String, String> mm, RDH rdh, int securityParameter) 
-			throws InvalidKeyException, InvalidAlgorithmParameterException, NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException, IOException {
+			throws InvalidKeyException, InvalidAlgorithmParameterException, NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException, IOException, InterruptedException, ExecutionException {
 		
 		this.digest = MessageDigest.getInstance("SHA-256");
 		if (this.digest.getDigestLength() < idLengthBytes)
@@ -73,8 +79,10 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 		this.manager.setup(this.server, mm);
 		double elapsed = ((System.nanoTime() - startTime) / nano);
 		System.out.println(String.format("Setup took %.2fms", 1000 * elapsed));
-		System.out.println(String.format("%d document word pairs inserted [%.4fms/pair]", 
-				this.server.encryptedMM.size(), 1000 * elapsed / this.server.encryptedMM.size()));
+		System.out.println(String.format("%d document word pairs inserted [%.4fms/pair]\n%d total documents", 
+				this.server.encryptedMM.size(), 
+				1000 * elapsed / this.server.encryptedMM.size(),
+				this.manager.documents.size()));
 	}
 
 	public void enroll(String username) throws UserAlreadyExists {
@@ -177,18 +185,73 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 			documents = new HashMap<String, DocumentInfo>();
 			masterKeys = new byte[3][];
 		}
-
 		
-		public void setup(Server server, Multimap<String, String> mm) throws InvalidKeyException, InvalidAlgorithmParameterException, NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException, IOException {
+		public void setup(Server server, final Multimap<String, String> mm) 
+				throws InvalidKeyException, InvalidAlgorithmParameterException, NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException, IOException, InterruptedException, ExecutionException {
+			
 			this.server = server;
-
+			
 			// select 3 master keys
 			for (int i = 0; i < 3; ++i)
 				masterKeys[i] = CryptoPrimitives.randomBytes(securityParameter);
 
+			int numThreads = Math.min(mm.keySet().size(), Runtime.getRuntime().availableProcessors());
+			ExecutorService service = Executors.newFixedThreadPool(numThreads);
+			List<String[]> inputs = new ArrayList<>(numThreads);
+			List<String> listOfDocumentNames = new ArrayList<>(mm.keySet());
+			
+			for (int i = 0; i < numThreads; i++) {
+				String[] tmp;
+				if (i == numThreads - 1) {
+					tmp = new String[mm.keySet().size() / numThreads + mm.keySet().size() % numThreads];
+					for (int j = 0; j < mm.keySet().size() / numThreads + mm.keySet().size() % numThreads; j++) {
+						tmp[j] = listOfDocumentNames.get((mm.keySet().size() / numThreads) * i + j);
+					}
+				} else {
+					tmp = new String[mm.keySet().size() / numThreads];
+					for (int j = 0; j < mm.keySet().size() / numThreads; j++) {
+
+						tmp[j] = listOfDocumentNames.get((mm.keySet().size() / numThreads) * i + j);
+					}
+				}
+				inputs.add(i, tmp);
+				System.out.println("Thread #" + (i + 1) + " gets documents " + Arrays.toString(tmp));
+			}
+
+			System.out.println("End of Partitionning\n");
+
+			Map<CT_G, byte[]> encryptedMM = new HashMap<CT_G, byte[]>();
+			List<Future<Pair<Map<String, DocumentInfo>, Map<CT_G, byte[]>>>> futures = new ArrayList<>();
+			for (final String[] input : inputs) {
+				Callable<Pair<Map<String, DocumentInfo>, Map<CT_G, byte[]>>> callable = 
+						new Callable<Pair<Map<String, DocumentInfo>, Map<CT_G, byte[]>>>() {
+					
+					public Pair<Map<String, DocumentInfo>, Map<CT_G, byte[]>> call() throws Exception {
+						return encryptDocuments(input, mm);
+					}
+					
+				};
+				futures.add(service.submit(callable));
+			}
+
+			service.shutdown();
+
+			for (Future<Pair<Map<String, DocumentInfo>, Map<CT_G, byte[]>>> future : futures) {
+				documents.putAll(future.get().fst);
+				encryptedMM.putAll(future.get().snd);
+			}
+			
+			// TODO randomize order of map (?)
+
+			// send encrypted map to server
+			this.server.setup(encryptedMM);
+		}
+		
+		public Pair<Map<String, DocumentInfo>, Map<CT_G, byte[]>> encryptDocuments(String[] docNames, final Multimap<String, String> mm) throws InvalidKeyException, InvalidAlgorithmParameterException, NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException, IOException {
 			// Build encrypted map from corpus of documents
-			Map<CT_G, byte[]> encryptedMM = new HashMap<CT_G, byte[]>();			
-			for (String documentName : mm.keySet()) {
+			Map<String, DocumentInfo> docs = new HashMap<String, DocumentInfo>();
+			Map<CT_G, byte[]> encryptedMM = new HashMap<CT_G, byte[]>();
+			for (String documentName : docNames) {
 				byte[] docID = documentNameToID(documentName);
 				DocumentInfo document = 
 						new DocumentInfo(docID,
@@ -196,7 +259,7 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 							F(masterKeys[1], docID),
 							G(masterKeys[2], docID));
 				
-				documents.put(documentName, document);
+				docs.put(documentName, document);
 				
 				for (String word : mm.get(documentName)) {
 					CT_G xCT = rdh.H(F(document.Kd2, document.documentID), F(document.Kd1, wordToID(word)));
@@ -204,11 +267,7 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 					encryptedMM.put(xCT, yCT);
 				}
 			}
-			
-			// TODO randomize order of map (?)
-
-			// send encrypted map to server
-			this.server.setup(encryptedMM);
+			return new Pair<>(docs, encryptedMM);
 		}
 
 		public User enroll(String username) throws UserAlreadyExists {
