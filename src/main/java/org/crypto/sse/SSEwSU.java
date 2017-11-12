@@ -44,10 +44,12 @@ import com.google.common.collect.Multimap;
 public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 
 	public final static String START_STRING = "STARTSTRING";
-	public final static int idLength = 128;
-
+	public final static int idLengthBytes = 128 / 8;
 	public final static double nano = 1000000000.0;
+	public final static int AES_IV_LENGTH = 16;
+	public final static int METADATA_LENGTH = 40;
 
+	public final MessageDigest digest;
 	public final int securityParameter;
 	public final RDH rdh;
 	
@@ -56,7 +58,11 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 
 	public SSEwSU(Multimap<String, String> mm, RDH rdh, int securityParameter) 
 			throws InvalidKeyException, InvalidAlgorithmParameterException, NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException, IOException {
-
+		
+		this.digest = MessageDigest.getInstance("SHA-256");
+		if (this.digest.getDigestLength() < idLengthBytes)
+			throw new InvalidAlgorithmParameterException();
+		
 		this.securityParameter = securityParameter;
 		this.rdh = rdh;
 		
@@ -102,7 +108,7 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 	}
 
 	public byte[] Encrypt(byte[] key, String x) throws InvalidKeyException, InvalidAlgorithmParameterException, NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException, IOException { 
-		return CryptoPrimitives.encryptAES_CTR_String(key, CryptoPrimitives.randomBytes(16), x, 40);
+		return CryptoPrimitives.encryptAES_CTR_String(key, CryptoPrimitives.randomBytes(AES_IV_LENGTH), x, METADATA_LENGTH);
 	}
 
 	public String Decrypt(byte[] key, byte[] x) throws InvalidKeyException, InvalidAlgorithmParameterException, NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException, IOException { 
@@ -180,32 +186,8 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 			for (int i = 0; i < 3; ++i)
 				masterKeys[i] = CryptoPrimitives.randomBytes(securityParameter);
 
-			// set up encrypted map
-			Map<CT_G, byte[]> encryptedMM = new HashMap<CT_G, byte[]>();
-			/* Building from existing reverse Index
-			 * 
-			for (String word : mm.keySet()) {
-				for (String documentName : mm.get(word)) {
-					if (!documents.containsKey(documentName)) {
-						byte[] docID = documentNameToID(documentName);
-						documents.put(documentName, 
-								new DocumentInfo(docID,
-										F(masterKeys[0], docID),
-										F(masterKeys[1], docID),
-										G(masterKeys[2], docID)));
-					}
-					DocumentInfo document = documents.get(documentName);
-					// TODO use EC generator
-					BigInteger tmp = new BigInteger(F(document.Kd2, document.documentID));
-					BigInteger tmp2 = new BigInteger(F(document.Kd1, wordToID(word)));
-					byte[] xCT = (tmp.multiply(tmp2)).mod(fieldOrder).toByteArray();
-					byte[] yCT = Encrypt(document.encKey, START_STRING + documentName);
-					encryptedMM.put(ByteBuffer.wrap(xCT), yCT);
-				}
-			}
-			*/
-			
-			// Building from corpus of documents
+			// Build encrypted map from corpus of documents
+			Map<CT_G, byte[]> encryptedMM = new HashMap<CT_G, byte[]>();			
 			for (String documentName : mm.keySet()) {
 				byte[] docID = documentNameToID(documentName);
 				DocumentInfo document = 
@@ -284,6 +266,7 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 
 	class User {
 
+		@SuppressWarnings("unused")
 		private String username;
 		private byte[][] userKeys;
 		private List<DocumentInfo> accessList;
@@ -349,31 +332,27 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 		}
 	}
 
+	@SuppressWarnings("serial")
 	public static class UserAlreadyExists extends Exception {
 		String username;
 		UserAlreadyExists(String username) { this.username = username; }
 	}
 
+	@SuppressWarnings("serial")
 	public static class UserDoesntExist extends Exception {
 		String username;
 		UserDoesntExist(String username) { this.username = username; }
 	}
 
+	@SuppressWarnings("serial")
 	public static class DocumentDoesntExist extends Exception {
 		String name;
 		DocumentDoesntExist(String name) { this.name = name; }
 	}
 
 	public byte[] documentNameToID(String documentName) {
-		try {		
-			MessageDigest digest;
-			digest = MessageDigest.getInstance("SHA-256");
-			byte[] hash = digest.digest(documentName.getBytes());
-			return Arrays.copyOf(hash, idLength);
-			//			return documentName.getBytes();
-		} catch (NoSuchAlgorithmException e) {
-			return null;
-		}
+		byte[] hash = digest.digest(documentName.getBytes());
+		return Arrays.copyOf(hash, idLengthBytes);
 	}
 
 	public byte[] wordToID(String word) {

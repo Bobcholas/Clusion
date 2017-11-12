@@ -4,14 +4,12 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.nio.ByteBuffer;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
 import java.security.spec.InvalidKeySpecException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 
 import javax.crypto.NoSuchPaddingException;
@@ -19,7 +17,6 @@ import javax.crypto.NoSuchPaddingException;
 import org.bouncycastle.jce.ECNamedCurveTable;
 import org.bouncycastle.math.ec.ECPoint;
 import org.crypto.sse.CryptoPrimitives.ECRDH;
-import org.crypto.sse.CryptoPrimitives.NaiveRDH;
 import org.crypto.sse.SSEwSU;
 import org.crypto.sse.SSEwSU.DocumentDoesntExist;
 import org.crypto.sse.SSEwSU.UserAlreadyExists;
@@ -28,7 +25,7 @@ import org.crypto.sse.SSEwSU.UserDoesntExist;
 public class TestSSEwSU {
 
 	static String HELP_TEXT = "Commands: \n"
-			+ "> (e)nroll <username>\n"
+			+ "> (e)nroll [<username>]+\n"
 			+ "> (s)hare <document name> [<username>]+\n"
 			+ "> (u)nshare <document name> [<username>]+\n"
 			+ "> (q)uery <username> <keyword>\n"
@@ -54,9 +51,9 @@ public class TestSSEwSU {
 		System.out.println("\nBeginning of Encrypted Multi-map creation \n");
 
 		final int securityParameter = 128;
-		NaiveRDH rdh = new NaiveRDH(securityParameter);
 		ECRDH ecrdh = new ECRDH(ECNamedCurveTable.getParameterSpec("secp224r1"));
-		
+
+//		NaiveRDH rdh = new NaiveRDH(securityParameter);
 //		SSEwSU<ByteBuffer, NaiveRDH> sse = new SSEwSU<ByteBuffer, NaiveRDH>(TextExtractPar.lp2, rdh, securityParameter);
 		SSEwSU<ECPoint, ECRDH> sse = new SSEwSU<ECPoint, ECRDH>(TextExtractPar.lp2, ecrdh, securityParameter);
 
@@ -78,15 +75,18 @@ public class TestSSEwSU {
 			case "enroll":
 				{
 					if (splitCommand.length < 2) {
-						System.out.println("Error: expected format: (e)nroll <username>");
+						System.out.println("Error: expected format: (e)nroll [<username>]+");
 						break;
 					}
-					String username = splitCommand[1];
-					try {
-						sse.enroll(username);
-						System.out.println("Successfully registered new user: " + username);
-					} catch (UserAlreadyExists e) {
-						System.out.println("Error: cannot enroll " + username + " user already exists");
+					
+					for (int u = 1; u < splitCommand.length; ++u) {
+						String username = splitCommand[u];
+						try {
+							sse.enroll(username);
+							System.out.println("Successfully registered new user: " + username);
+						} catch (UserAlreadyExists e) {
+							System.out.println("Error: cannot enroll " + username + " user already exists");
+						}
 					}
 				}
 				break;
@@ -97,6 +97,7 @@ public class TestSSEwSU {
 						System.out.println("Expected format: (s)hare <document name> [<username>]+");
 						break;
 					}
+					
 					String documentName = splitCommand[1];
 					for (int u = 2; u < splitCommand.length; ++u) {
 						String username = splitCommand[u];
@@ -121,6 +122,7 @@ public class TestSSEwSU {
 						System.out.println("Expected format: (u)nshare <document name> [<username>]+");
 						break;
 					}
+					
 					String documentName = splitCommand[1];
 					for (int u = 2; u < splitCommand.length; ++u) {
 						String username = splitCommand[u];
@@ -145,6 +147,7 @@ public class TestSSEwSU {
 						System.out.println("Error: expected format: (q)uery <username> <keyword>");
 						break;
 					}
+					
 					String username = splitCommand[1];
 					String keyword = splitCommand[2];
 	
