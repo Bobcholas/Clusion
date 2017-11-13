@@ -39,6 +39,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.regex.Pattern;
 
 import javax.crypto.NoSuchPaddingException;
 
@@ -53,7 +54,7 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 	public final static int idLengthBytes = 128 / 8;
 	public final static double nano = 1000000000.0;
 	public final static int AES_IV_LENGTH = 16;
-	public final static int METADATA_LENGTH = 40;
+	public final static int METADATA_LENGTH = 60;
 
 	public final int securityParameter;
 	public final RDH rdh;
@@ -84,12 +85,36 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 		this.manager.enroll(username);
 	}
 
-	public void shareDoc(String documentName, String username) throws UserDoesntExist, DocumentDoesntExist, UnsupportedEncodingException {
-		this.manager.shareDoc(documentName, username);
+	public Collection<String> shareDoc(String documentName, String username) throws UserDoesntExist, DocumentDoesntExist, UnsupportedEncodingException {
+		Collection<String> sharedDocs = new HashSet<String>();
+		if (documentName.contains("*")) {
+			Pattern p = Pattern.compile(documentName);
+			for (String name : this.manager.documents.keySet()) {
+				if (p.matcher(name).matches()) {
+					this.manager.shareDoc(name, username);
+					sharedDocs.add(name);
+				}
+			}
+		} else {
+			this.manager.shareDoc(documentName, username);
+		}
+		return sharedDocs;
 	}
 
-	public void unshareDoc(String documentName, String username) throws UserDoesntExist, DocumentDoesntExist, UnsupportedEncodingException {
-		this.manager.unshareDoc(documentName, username);
+	public Collection<String> unshareDoc(String documentName, String username) throws UserDoesntExist, DocumentDoesntExist, UnsupportedEncodingException {
+		Collection<String> unsharedDocs = new HashSet<String>();
+		if (documentName.contains("*")) {
+			Pattern p = Pattern.compile(documentName);
+			for (String name : this.manager.documents.keySet()) {
+				if (p.matcher(name).matches()) {
+					this.manager.unshareDoc(name, username);
+					unsharedDocs.add(name);
+				}
+			}
+		} else {
+			this.manager.unshareDoc(documentName, username);
+		}
+		return unsharedDocs;
 	}
 
 	public Collection<String> query(String username, String keyword) throws InvalidKeyException, InvalidAlgorithmParameterException, NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException, IOException {
@@ -193,11 +218,15 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 			
 			for (String documentName : mm.keySet()) {
 				byte[] docID = documentNameToID(documentName);
+				byte[] kd2 = F(masterKeys[1], docID);
+				byte[] encKey = G(masterKeys[2], docID);
 				DocumentInfo document = 
 						new DocumentInfo(docID,
 							F(masterKeys[0], docID),
-							F(masterKeys[1], docID),
-							G(masterKeys[2], docID));
+							kd2,
+							encKey,
+							Encrypt(encKey, START_STRING + documentName),
+							F(kd2, docID));
 				
 				documents.put(documentName, document);
 			}
@@ -221,7 +250,7 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 				System.out.println("Thread #" + (i + 1) + " gets " + tmp.size() + " pairs");
 			}
 
-			System.out.println("End of Partitionning\n");
+			System.out.println("End of Partitioning\n");
 
 			Map<CT_G, byte[]> encryptedMM = new HashMap<CT_G, byte[]>();
 			List<Future<Map<CT_G, byte[]>>> futures = new ArrayList<>();
@@ -253,15 +282,23 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 				throws InvalidKeyException, InvalidAlgorithmParameterException, NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException, IOException {
 			
 			// Build encrypted map from corpus of documents
+			int i = 0;
 			Map<CT_G, byte[]> encryptedMM = new HashMap<CT_G, byte[]>();
 			for (Entry<String,String> docWord : documentWordPairs) {
 				String documentName = docWord.getKey();
 				String word = docWord.getValue();
 				DocumentInfo document = documents.get(documentName);
 			
-				CT_G xCT = rdh.H(F(document.Kd2, document.documentID), F(document.Kd1, wordToID(word)));
-				byte[] yCT = Encrypt(document.encKey, START_STRING + documentName);
-				encryptedMM.put(xCT, yCT);
+				CT_G xCT = rdh.H(document.Kd2Enc, F(document.Kd1, wordToID(word)));
+				encryptedMM.put(xCT, document.encryptedMetadata);
+				
+				if ((i++ % 2500) == 0) {
+					synchronized (System.out) {
+					System.out.println("Thread " + Thread.currentThread().getId() + " is " + 
+							(100 * i)/documentWordPairs.size() + "% done "
+									+ "[" + i + "/" + documentWordPairs.size() + "]"); 
+					}
+				}
 			}
 			return encryptedMM;
 		}
@@ -348,7 +385,7 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 			Set<byte[]> queryResponse = this.server.search(queryCiphertexts);
 
 			// decrypt response from server
-			Collection<String> result = new HashSet<String>();
+			Collection<String> result = new HashSet<String>(queryResponse.size());
 			for (byte[] encryptedDocMetadata : queryResponse) {
 				// HOW TO KNOW WHICH DOCUMENT A RESPONSE IS FOR (in order to decrypt it w/ the right key)
 				// need to return docID too?
@@ -357,9 +394,8 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 				for (DocumentInfo document : this.accessList) {
 					String decrypt = Decrypt(document.encKey, encryptedDocMetadata);
 					if (decrypt.substring(0, START_STRING.length()).equals(START_STRING)) {
-						String metadata = decrypt.substring(START_STRING.length());
+						String metadata = decrypt.substring(START_STRING.length()).trim();
 						result.add(metadata);
-						System.out.println(metadata + " ");
 						break;
 					}
 				}
@@ -368,7 +404,7 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 		}
 
 		public void addDocumentInfo(byte[] docID, byte[] docKey, byte[] encKey) {
-			this.accessList.add(new DocumentInfo(docID, docKey, null, encKey));
+			this.accessList.add(new DocumentInfo(docID, docKey, null, encKey, null, null));
 		}
 
 	}
@@ -378,12 +414,16 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 		private byte[] Kd1;
 		private byte[] Kd2;
 		private byte[] encKey;
+		private byte[] encryptedMetadata;
+		private byte[] Kd2Enc;
 
-		DocumentInfo(byte[] docID, byte[] kd1, byte[] kd2, byte[] encKey) {
+		DocumentInfo(byte[] docID, byte[] kd1, byte[] kd2, byte[] encKey, byte[] encryptedMetadata, byte[] kd2Enc) {
 			this.documentID = docID;
 			this.Kd1 = kd1;
 			this.Kd2 = kd2;
+			this.Kd2Enc = kd2Enc;
 			this.encKey = encKey;
+			this.encryptedMetadata = encryptedMetadata;
 		}
 	}
 

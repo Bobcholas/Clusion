@@ -10,6 +10,7 @@ import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
 import java.security.spec.InvalidKeySpecException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.concurrent.ExecutionException;
 
@@ -59,8 +60,8 @@ public class TestSSEwSU {
 		SSEwSU<ECPoint, ECRDH> sse = new SSEwSU<ECPoint, ECRDH>(TextExtractPar.lp2, ecrdh, securityParameter);
 
 		System.out.println();
-		System.out.println(TextExtractPar.lp1);
-		System.out.println(TextExtractPar.lp2);
+		System.out.println((new ArrayList<String>(TextExtractPar.lp1.keySet())).subList(0, 20));
+		System.out.println((new ArrayList<String>(TextExtractPar.lp2.keySet())).subList(0, 20));
 		
 		System.out.println("\n" + HELP_TEXT);
 
@@ -105,10 +106,10 @@ public class TestSSEwSU {
 						String username = splitCommand[u];
 						try {
 							long startTime = System.nanoTime();
-							sse.shareDoc(documentName, username);
+							Collection<String> names = sse.shareDoc(documentName, username);
 							double elapsed = ((System.nanoTime() - startTime) / SSEwSU.nano);
 							System.out.println("[" + String.format("%.2fms", 1000 * elapsed) + 
-									"]: Successfully Shared " + documentName + " with " + username);
+									"]: Successfully Shared " + names.size() + " documents " + names + " with " + username);
 						} catch (UserDoesntExist e) {
 							System.out.println("Error: user " + username + " does not exist");
 						} catch (DocumentDoesntExist e) {
@@ -130,10 +131,10 @@ public class TestSSEwSU {
 						String username = splitCommand[u];
 						try {
 							long startTime = System.nanoTime();
-							sse.unshareDoc(documentName, username);
+							Collection<String> names = sse.unshareDoc(documentName, username);
 							double elapsed = ((System.nanoTime() - startTime) / SSEwSU.nano);
 							System.out.println("[" + String.format("%.2fms", 1000 * elapsed) + 
-									"]: Successfully Unshared " + documentName + " with " + username);
+									"]: Successfully Unshared " + names.size() + " documents " + names + " with " + username);
 						} catch (UserDoesntExist e) {
 							System.out.println("Error: user " + username + " does not exist");
 						} catch (DocumentDoesntExist e) {
