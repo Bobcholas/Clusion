@@ -97,6 +97,7 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 			}
 		} else {
 			this.manager.shareDoc(documentName, username);
+			sharedDocs.add(documentName);
 		}
 		return sharedDocs;
 	}
@@ -113,6 +114,7 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 			}
 		} else {
 			this.manager.unshareDoc(documentName, username);
+			unsharedDocs.add(documentName);
 		}
 		return unsharedDocs;
 	}

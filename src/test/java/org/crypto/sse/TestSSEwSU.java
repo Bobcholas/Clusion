@@ -59,9 +59,9 @@ public class TestSSEwSU {
 //		SSEwSU<ByteBuffer, NaiveRDH> sse = new SSEwSU<ByteBuffer, NaiveRDH>(TextExtractPar.lp2, rdh, securityParameter);
 		SSEwSU<ECPoint, ECRDH> sse = new SSEwSU<ECPoint, ECRDH>(TextExtractPar.lp2, ecrdh, securityParameter);
 
-		System.out.println();
-		System.out.println((new ArrayList<String>(TextExtractPar.lp1.keySet())).subList(0, 20));
-		System.out.println((new ArrayList<String>(TextExtractPar.lp2.keySet())).subList(0, 20));
+//		System.out.println();
+//		System.out.println((new ArrayList<String>(TextExtractPar.lp1.keySet())).subList(0, 20));
+//		System.out.println((new ArrayList<String>(TextExtractPar.lp2.keySet())).subList(0, 20));
 		
 		System.out.println("\n" + HELP_TEXT);
 
