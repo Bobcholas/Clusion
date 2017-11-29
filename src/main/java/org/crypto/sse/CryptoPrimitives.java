@@ -824,15 +824,34 @@ public class CryptoPrimitives {
 	
 	// ***********************************************************************************************//
 	///////////////////// Rewritable Deterministic Hashing /////////////////////////////
+	// Sorin Vatasoiu & Nick Cunningham
 	// ***********************************************************************************************//
 
 	interface RewritableDeterministicHash<G> 
 	{
-		G H(byte[] A, byte[] B);
+		/**
+		 * Hashes two values together rewritably
+		 * @param A One value
+		 * @param B Second value
+		 * @return The hash of the pair (unordered)
+		 */
+		G H(byte[] A, byte[] B); 
+		/**
+		 * Creates a token that, when applied to the RDH ciphertext of the unordered pair (D, X), creates the RDH ciphertext of the unordered pair (C, X).
+		 * @param C The new value of the pair member
+		 * @param D The old value of the pair member
+		 * @return The token for Apply()
+		 */
 		byte[] GenToken(byte[] C, byte[] D);
+		/**
+		 * Apply a token to a ciphertext, rewriting a value in the ciphertext according to the token.
+		 * @param ct The ciphertext to modify
+		 * @param token The token to apply
+		 * @return The new, modified ciphertext
+		 */
 		G Apply(G ct, byte[] token);
 		
-		BigInteger getFieldOrder();
+		BigInteger getFieldOrder(); //Order of possible values of the hash function
 	}
 	
 	public static class NaiveRDH implements RewritableDeterministicHash<ByteBuffer> 
@@ -875,6 +894,10 @@ public class CryptoPrimitives {
 		public final BigInteger fieldOrder;
 		public final ECPoint generator;
 		
+		/**
+		 * Note that the security parameter depends on which elliptic curve is used; its length is the security parameter's length.
+		 * @param params The elliptic curve to use.
+		 */
 		ECRDH(ECNamedCurveParameterSpec params) { 
 			this.fieldOrder = params.getN();
 			this.generator = params.getG().multiply(new BigInteger(randomBytes(params.getCurve().getFieldSize())).mod(this.fieldOrder));

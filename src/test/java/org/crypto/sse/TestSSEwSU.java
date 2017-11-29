@@ -31,6 +31,8 @@ public class TestSSEwSU {
 			+ "> (s)hare <document name> [<username>]+\n"
 			+ "> (u)nshare <document name> [<username>]+\n"
 			+ "> (q)uery <username> <keyword>\n"
+			+ "> (a)dd keyword <username> <keyword> <document name>"
+			+ "> (r)emove keyword <username> <keyword> <document name>"
 			+ "> [exit|quit]\n"
 			+ "> (h)elp\n";
 
@@ -164,6 +166,52 @@ public class TestSSEwSU {
 							System.out.print(docName + " ");
 						System.out.print("\n");
 					}
+				}
+				break;
+			case "a":
+			case "add":
+				{
+					if (splitCommand.length < 4) {
+						System.out.println("Error: expected format: (a)dd <username> <keyword> <document name>");
+						break;
+					}
+	
+					String username = splitCommand[1];
+					String keyword = splitCommand[2];
+					String docName = splitCommand[3];
+					
+					long startTime = System.nanoTime();
+					boolean success = sse.addKeyword(username, keyword, docName);
+					double elapsed = ((System.nanoTime() - startTime) / SSEwSU.nano);
+					if (success){
+						System.out.println("[" + String.format("%.2fms", 1000 * elapsed) + "]: " + " Keyword added.");
+					}else{
+						System.out.println("[" + String.format("%.2fms", 1000 * elapsed) + "]: " + " Keyword addition failed.");
+					}
+
+				}
+				break;
+			case "r":
+			case "remove":
+				{
+					if (splitCommand.length < 4) {
+						System.out.println("Error: expected format: (r)emove <username> <keyword> <document name>");
+						break;
+					}
+	
+					String username = splitCommand[1];
+					String keyword = splitCommand[2];
+					String docName = splitCommand[3];
+					
+					long startTime = System.nanoTime();
+					boolean success = sse.removeKeyword(username, keyword, docName);
+					double elapsed = ((System.nanoTime() - startTime) / SSEwSU.nano);
+					if (success){
+						System.out.println("[" + String.format("%.2fms", 1000 * elapsed) + "]: " + " Keyword added.");
+					}else{
+						System.out.println("[" + String.format("%.2fms", 1000 * elapsed) + "]: " + " Keyword addition failed.");
+					}
+
 				}
 				break;
 			case "h":
