@@ -17,6 +17,9 @@
 package org.crypto.sse;
 
 import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.io.Serializable;
 import java.io.UnsupportedEncodingException;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
@@ -43,42 +46,55 @@ import java.util.regex.Pattern;
 
 import javax.crypto.NoSuchPaddingException;
 
-import org.crypto.sse.CryptoPrimitives.RewritableDeterministicHash;
+import org.apache.commons.lang.SerializationUtils;
+import org.bouncycastle.asn1.sec.SECNamedCurves;
+import org.bouncycastle.jce.ECNamedCurveTable;
+import org.bouncycastle.math.ec.ECCurve;
+import org.bouncycastle.math.ec.ECPoint;
+import org.crypto.sse.CryptoPrimitives.ECRDH;
 
 import com.google.common.collect.Multimap;
-import com.sun.tools.javac.util.Pair;
+import com.javamex.classmexer.MemoryUtil;
 
-public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
+public class SSEwSU {
 
 	public final static String START_STRING = "STARTSTRING";
 	public final static int idLengthBytes = 128 / 8;
 	public final static double nano = 1000000000.0;
 	public final static int AES_IV_LENGTH = 16;
-	public final static int METADATA_LENGTH = 60;
+	public final static int METADATA_LENGTH = 256;
+	private final static boolean debug = true;
 
 	public final int securityParameter;
-	public final RDH rdh;
+	public final ECRDH rdh;
 	
 	private Server server;
 	private Manager manager;
+	
+	private static final ECCurve curve = ECNamedCurveTable.getParameterSpec("secp224r1").getCurve();
 
-	public SSEwSU(Multimap<String, String> mm, RDH rdh, int securityParameter) 
+	public SSEwSU(Multimap<String, String> mm, int securityParameter) 
 			throws InvalidKeyException, InvalidAlgorithmParameterException, NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException, IOException, InterruptedException, ExecutionException {
 		
 		this.securityParameter = securityParameter;
-		this.rdh = rdh;
-		
+		this.rdh = new ECRDH(ECNamedCurveTable.getParameterSpec("secp224r1")); //rdh;
+
 		this.server = new Server();
 		this.manager = new Manager();
 		
-		long startTime = System.nanoTime();
+//		long startTime = System.nanoTime();
 		this.manager.setup(this.server, mm);
-		double elapsed = ((System.nanoTime() - startTime) / nano);
-		System.out.println(String.format("Setup took %.2fms", 1000 * elapsed));
-		System.out.println(String.format("%d document word pairs inserted [%.4fms/pair]\n%d total documents", 
-				this.server.encryptedMM.size(), 
-				1000 * elapsed / this.server.encryptedMM.size(),
-				this.manager.documents.size()));
+//		double elapsed = ((System.nanoTime() - startTime) / nano);
+//		System.out.println(String.format("Setup took %.2fms", 1000 * elapsed));
+//		System.out.println(String.format("%d document word pairs inserted [%.4fms/pair]\n%d total documents", 
+//				this.server.encryptedMM.size(), 
+//				1000 * elapsed / this.server.encryptedMM.size(),
+//				this.manager.documents.size()));
+		
+//		long serverSize = MemoryUtil.deepMemoryUsageOf(this.server) / 1024 / 1024;
+//		System.out.printf("Server memory usage: %d MB\n", serverSize);
+//		TestSSEwSU.debugOutput.write(String.format("SERVER SIZE: %d MB\n", serverSize));
+//		TestSSEwSU.debugOutput.write(String.format("SERVER UPLOAD TIME: %.2fms\n", 1000 * elapsed));
 	}
 
 	public void enroll(String username) throws UserAlreadyExists {
@@ -124,6 +140,8 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 			System.out.println("User " + username + " does not exist");
 			return null;
 		}
+//		debugPrintf("User %s has access to %d files\n", username, 
+//				this.manager.users.get(username).accessList.size());
 		return this.manager.users.get(username).search(keyword);
 	}
 	
@@ -198,31 +216,62 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 		return new String(CryptoPrimitives.decryptAES_CTR_String(ciphertext, key)); 
 	}
 
-	class Query {
-		byte[] authTokenID;
-		CT_G queryCiphertext;
+	class Query implements Serializable {
+		private static final long serialVersionUID = -1891843663804523275L;
+		private transient byte[] authTokenID;
+		private transient ECPoint queryCiphertext;
 
-		Query(byte[] tokID, CT_G ct) {
+		Query(byte[] tokID, ECPoint ct) {
 			this.authTokenID = tokID;
 			this.queryCiphertext = ct;
 		}
+		
+		private void readObject(ObjectInputStream aInputStream) throws ClassNotFoundException, IOException
+	    {      
+	        int len = aInputStream.readInt();
+	        authTokenID = new byte[len];
+	        aInputStream.read(authTokenID);
+	        len = aInputStream.readInt();
+	        byte[] b = new byte[len];
+	        aInputStream.read(b);
+	        queryCiphertext = curve.decodePoint(b);
+	    }
+	 
+	    private void writeObject(ObjectOutputStream aOutputStream) throws IOException
+	    {
+	        aOutputStream.writeInt(authTokenID.length);
+	        aOutputStream.write(authTokenID);
+	        byte[] bs = queryCiphertext.getEncoded(true);
+	        aOutputStream.writeInt(bs.length);
+	        aOutputStream.write(bs);
+        }
 	}
 	class EditQuery {
 		byte[] authTokenID;
-		CT_G queryCiphertext;
+		ECPoint queryCiphertext;
 		byte[] encryptedMetadata;
 
-		EditQuery(byte[] tokID, CT_G ct, byte[] encryptedMetadata) {
+		EditQuery(byte[] tokID, ECPoint ct, byte[] encryptedMetadata) {
 			this.authTokenID = tokID;
 			this.queryCiphertext = ct;
 			this.encryptedMetadata = encryptedMetadata;
+		}
+	}
+	
+	static class ServerResponse {
+		byte[] authTokenID;
+		byte[] yCT;
+		
+		ServerResponse(byte[] a, byte[] b) {
+			authTokenID = a;
+			yCT = b;
 		}
 	}
 
 	class Server {
 
 		// map: EncryptedDocumentWordPair -> EncryptedDocumentMetadata
-		Map<CT_G, byte[]> encryptedMM;
+		Map<ECPoint, byte[]> encryptedMM;
 		// map: authTokenID -> authToken
 		Map<ByteBuffer, byte[]> authTokenMap;
 		Map<ByteBuffer, byte[]> authTokenEditMap;
@@ -235,7 +284,7 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 			this(false);
 		}
 		
-		public void setup(Map<CT_G, byte[]> encryptedMM) {
+		public void setup(Map<ECPoint, byte[]> encryptedMM) {
 			this.encryptedMM = encryptedMM;
 			this.authTokenMap = new HashMap<ByteBuffer, byte[]>();
 			if (editPerms){
@@ -243,18 +292,19 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 			}
 		}
 
-		public Set<byte[]> search(Set<Query> queries) {
-			Set<byte[]> resultSet = new HashSet<byte[]>();
-			for (Query query : queries) {
+		public Set<ServerResponse> search(Set<byte[]> queryCiphertexts) {			
+			Set<ServerResponse> resultSet = new HashSet<ServerResponse>();
+			for (byte[] qCT : queryCiphertexts) {
+				Query query = (SSEwSU.Query) SerializationUtils.deserialize(qCT);
 				byte[] authToken = authTokenMap.get(ByteBuffer.wrap(query.authTokenID));
 				if (authToken == null) {
 					continue;
 				}
 
-				CT_G xCT = rdh.Apply(query.queryCiphertext, authToken);
+				ECPoint xCT = rdh.Apply(query.queryCiphertext, authToken);
 				byte[] yCT = encryptedMM.get(xCT);
 				if (yCT != null)
-					resultSet.add(yCT);
+					resultSet.add(new ServerResponse(query.authTokenID, yCT));
 			}
 			return resultSet;
 		}
@@ -283,7 +333,7 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 			if (authTokenEdit == null){ //not authorized
 				return;
 			}
-			CT_G newKeywordToken = rdh.Apply(query.queryCiphertext, authTokenEdit);
+			ECPoint newKeywordToken = rdh.Apply(query.queryCiphertext, authTokenEdit);
 			encryptedMM.put(newKeywordToken, query.encryptedMetadata);
 		}
 		public void removeKeyword(EditQuery query) {
@@ -291,7 +341,7 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 			if (authTokenEdit == null){ //not authorized
 				return;
 			}
-			CT_G newKeywordToken = rdh.Apply(query.queryCiphertext, authTokenEdit);
+			ECPoint newKeywordToken = rdh.Apply(query.queryCiphertext, authTokenEdit);
 			encryptedMM.remove(newKeywordToken);			
 		}
 
@@ -342,7 +392,7 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 									F(masterKeys[0], docID),
 									kd2,
 									encKey,
-									Encrypt(encKey, START_STRING + documentName),
+									Encrypt(encKey, documentName),
 									F(kd2, docID),
 									kdEdit);
 				}else{
@@ -351,7 +401,7 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 									F(masterKeys[0], docID),
 									kd2,
 									encKey,
-									Encrypt(encKey, START_STRING + documentName),
+									Encrypt(encKey, documentName),
 									F(kd2, docID));
 				}
 				
@@ -360,7 +410,7 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 
 			List<Entry<String,String>> listOfDocWordPairs = new ArrayList<>(mm.entries());
 			int totalWork = listOfDocWordPairs.size();
-			int numThreads = Math.min(totalWork, Runtime.getRuntime().availableProcessors());
+			int numThreads = Math.max(1, Math.min(totalWork, Runtime.getRuntime().availableProcessors()));
 			int workPerThread = totalWork / numThreads;
 			
 			ExecutorService service = Executors.newFixedThreadPool(numThreads);
@@ -379,13 +429,13 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 
 			System.out.println("End of Partitioning\n");
 
-			Map<CT_G, byte[]> encryptedMM = new HashMap<CT_G, byte[]>();
-			List<Future<Map<CT_G, byte[]>>> futures = new ArrayList<>();
+			Map<ECPoint, byte[]> encryptedMM = new HashMap<ECPoint, byte[]>();
+			List<Future<Map<ECPoint, byte[]>>> futures = new ArrayList<>();
 			for (final Collection<Entry<String,String>> input : inputs) {
-				Callable<Map<CT_G, byte[]>> callable = 
-						new Callable<Map<CT_G, byte[]>>() {
+				Callable<Map<ECPoint, byte[]>> callable = 
+						new Callable<Map<ECPoint, byte[]>>() {
 					
-					public Map<CT_G, byte[]> call() throws Exception {
+					public Map<ECPoint, byte[]> call() throws Exception {
 						return encryptDocWords(input);
 					}
 					
@@ -395,7 +445,7 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 
 			service.shutdown();
 
-			for (Future<Map<CT_G, byte[]>> future : futures) {
+			for (Future<Map<ECPoint, byte[]>> future : futures) {
 				encryptedMM.putAll(future.get());
 			}
 			
@@ -403,20 +453,24 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 
 			// send encrypted map to server
 			this.server.setup(encryptedMM);
+			
+
+//			long serverSize = MemoryUtil.deepMemoryUsageOf(encryptedMM) / 1024;
+//			TestSSEwSU.debugOutput.write(String.format("Server upload bandwidth: %d kB\n", serverSize));
 		}
 		
-		public Map<CT_G, byte[]> encryptDocWords(final Collection<Entry<String,String>> documentWordPairs) 
+		public Map<ECPoint, byte[]> encryptDocWords(final Collection<Entry<String,String>> documentWordPairs) 
 				throws InvalidKeyException, InvalidAlgorithmParameterException, NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException, IOException {
 			
 			// Build encrypted map from corpus of documents
 			int i = 0;
-			Map<CT_G, byte[]> encryptedMM = new HashMap<CT_G, byte[]>();
+			Map<ECPoint, byte[]> encryptedMM = new HashMap<ECPoint, byte[]>();
 			for (Entry<String,String> docWord : documentWordPairs) {
 				String documentName = docWord.getKey();
 				String word = docWord.getValue();
 				DocumentInfo document = documents.get(documentName);
 			
-				CT_G xCT = rdh.H(document.Kd2Enc, F(document.Kd1, wordToID(word)));
+				ECPoint xCT = rdh.H(document.Kd2Enc, F(document.Kd1, wordToID(word)));
 				encryptedMM.put(xCT, document.encryptedMetadata);
 				
 				if ((i++ % 2500) == 0) {
@@ -437,8 +491,8 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 
 			// generate keys for user
 			User newUser = new User(username, new byte[][] {
-				CryptoPrimitives.randomBytes(securityParameter),
-				CryptoPrimitives.randomBytes(securityParameter)
+				CryptoPrimitives.randomBytesBuffered(securityParameter),
+				CryptoPrimitives.randomBytesBuffered(securityParameter)
 			}, this.server);
 			users.put(username, newUser);
 			return null;
@@ -527,48 +581,60 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 		}
 
 		public Collection<String> search(String keyword) throws InvalidKeyException, InvalidAlgorithmParameterException, NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException, IOException {
-			Set<Query> queryCiphertexts = new HashSet<>();
+//			long startTime = System.nanoTime();
+			
+			Set<byte[]> queryCiphertexts = new HashSet<>();
+			Map<ByteBuffer, byte[]> authTokenIDToEncryptionKey = new HashMap<>();
 			for (DocumentInfo document : this.accessList) {
 				// compute auth token
 				byte[] authTokenID = F(userKeys[1], document.documentID);
 				// compute query ciphertext
-				CT_G queryCT = rdh.H(F(document.Kd1, wordToID(keyword)), F(userKeys[0], document.documentID));
-				queryCiphertexts.add(new Query(authTokenID, queryCT));
+				ECPoint queryCT = rdh.H(F(document.Kd1, wordToID(keyword)), F(userKeys[0], document.documentID));
+				queryCiphertexts.add(SerializationUtils.serialize(new Query(authTokenID, queryCT)));
+				authTokenIDToEncryptionKey.put(ByteBuffer.wrap(authTokenID), document.encKey);
 			}
 
 			// send query ciphertext to server
-			Set<byte[]> queryResponse = this.server.search(queryCiphertexts);
-
+//			long timeSpentCalculatingMemory = 0;
+//			long serverStartTime = System.nanoTime();
+//			debugPrintf("Search query    bandwidth [user -> server]: %d B\n", 
+//					MemoryUtil.deepMemoryUsageOf(queryCiphertexts) );
+//			TestSSEwSU.debugOutput.write(String.format("BANDWIDTH: %d\t%d\n", 
+//					queryCiphertexts.size(), MemoryUtil.deepMemoryUsageOf(queryCiphertexts)));
+//			timeSpentCalculatingMemory += ((System.nanoTime() - serverStartTime) / SSEwSU.nano);
+			Set<ServerResponse> queryResponse = this.server.search(queryCiphertexts);
+//			long calcStartTime = System.nanoTime();
+//			debugPrintf("Search response bandwidth [user <- server]: %d B\n", 
+//					MemoryUtil.deepMemoryUsageOf(queryResponse) );
+//			timeSpentCalculatingMemory += ((System.nanoTime() - calcStartTime) / SSEwSU.nano);
+//			double serverElapsed = ((System.nanoTime() - serverStartTime) / SSEwSU.nano);
+//			debugPrintf("Server search time: %.2fms\n", 1000 * (serverElapsed - timeSpentCalculatingMemory));
+//			TestSSEwSU.debugOutput.write(String.format("SERVER SEARCH TIME: %d\t%.2fms\n", 
+//					queryCiphertexts.size(), 1000 * (serverElapsed - timeSpentCalculatingMemory)));
 			// decrypt response from server
 			Collection<String> result = new HashSet<String>(queryResponse.size());
-			for (byte[] encryptedDocMetadata : queryResponse) {
-				// HOW TO KNOW WHICH DOCUMENT A RESPONSE IS FOR (in order to decrypt it w/ the right key)
-				// need to return docID too?
-				// FOR NOW: loop through decryption keys that we have until we find START_STRING
-				
-				for (DocumentInfo document : this.accessList) {
-					String decrypt = Decrypt(document.encKey, encryptedDocMetadata);
-					if (decrypt.substring(0, START_STRING.length()).equals(START_STRING)) {
-						String metadata = decrypt.substring(START_STRING.length()).trim();
-						result.add(metadata);
-						break;
-					}
-				}
+			for (ServerResponse encryptedResponse : queryResponse) {
+				String metadata = Decrypt(authTokenIDToEncryptionKey.get(ByteBuffer.wrap(encryptedResponse.authTokenID)), encryptedResponse.yCT);
+				result.add(metadata);
 			}
+//			double elapsed = ((System.nanoTime() - startTime) / SSEwSU.nano);
+//			debugPrintf("User search time: %.2fms\n", 1000 * (elapsed - serverElapsed - timeSpentCalculatingMemory));
+//			TestSSEwSU.debugOutput.write(String.format("SERVER SEARCH TIME: %d\t%.2fms\n", 
+//					queryCiphertexts.size(), 1000 * (elapsed - serverElapsed - timeSpentCalculatingMemory)));
 			return result;
 		}
 		
-		private CT_G makeEditCiphertext(DocumentInfo document, String keyword) throws NoSuchAlgorithmException, UnsupportedEncodingException{
-			CT_G editCT = rdh.H(F(document.Kd1, wordToID(keyword)), F(document.KdEdit, userKeys[0]));
+		private ECPoint makeEditCiphertext(DocumentInfo document, String keyword) throws NoSuchAlgorithmException, UnsupportedEncodingException{
+			ECPoint editCT = rdh.H(F(document.Kd1, wordToID(keyword)), F(document.KdEdit, userKeys[0]));
 			return editCT;
 		}
 		public void addKeyword(DocumentInfo document, String keyword) throws NoSuchAlgorithmException, UnsupportedEncodingException{
-			CT_G editCT = makeEditCiphertext(document, keyword);
+			ECPoint editCT = makeEditCiphertext(document, keyword);
 			EditQuery editQuery = new EditQuery(F(userKeys[1], document.KdEdit), editCT, document.encryptedMetadata);
 			server.addKeyword(editQuery);
 		}
 		public void removeKeyword(DocumentInfo document, String keyword) throws NoSuchAlgorithmException, UnsupportedEncodingException{
-			CT_G editCT = makeEditCiphertext(document, keyword);
+			ECPoint editCT = makeEditCiphertext(document, keyword);
 			EditQuery editQuery = new EditQuery(F(userKeys[1], document.KdEdit), editCT, null);
 			server.removeKeyword(editQuery);
 		}
@@ -631,6 +697,12 @@ public class SSEwSU<CT_G, RDH extends RewritableDeterministicHash<CT_G>> {
 
 	public byte[] wordToID(String word) throws NoSuchAlgorithmException {
 		return documentNameToID(word);
+	}
+	
+	public void debugPrintf(String format, Object... args) {
+		if (debug) {
+			System.out.printf(format, args);
+		}
 	}
 
 }

@@ -166,6 +166,15 @@ public class CryptoPrimitives {
 		random.nextBytes(salt);
 		return salt;
 	}
+	
+
+	final static ThreadedSeedGenerator thread = new ThreadedSeedGenerator();
+	final static SecureRandom random = new SecureRandom();
+	public static byte[] randomBytesBuffered(int nBytes) {
+		byte[] bytes = new byte[nBytes];
+		random.nextBytes(bytes);
+		return bytes;
+	}
 
 	// ***********************************************************************************************//
 
@@ -900,7 +909,7 @@ public class CryptoPrimitives {
 		 */
 		ECRDH(ECNamedCurveParameterSpec params) { 
 			this.fieldOrder = params.getN();
-			this.generator = params.getG().multiply(new BigInteger(randomBytes(params.getCurve().getFieldSize())).mod(this.fieldOrder));
+			this.generator = params.getG().multiply(new BigInteger(randomBytes(params.getCurve().getFieldSize())).mod(fieldOrder));
 		}
 
 		@Override

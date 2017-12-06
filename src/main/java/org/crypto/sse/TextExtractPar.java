@@ -362,6 +362,17 @@ public class TextExtractPar implements Serializable {
 				for (int j = 0; j < token.size(); j++) {
 
 					// Avoid counting occurrences of words in the same file
+					if (!lookup2.get(file.getAbsolutePath()).contains(token.get(j))) {
+						lookup2.put(file.getAbsolutePath(), token.get(j));
+					}
+
+					// Avoid counting occurrences of words in the same file
+					if (!lookup1.get(token.get(j)).contains(file.getAbsolutePath())) {
+						lookup1.put(token.get(j), file.getAbsolutePath());
+					}
+					
+					/*
+					// Avoid counting occurrences of words in the same file
 					if (!lookup2.get(file.getName()).contains(token.get(j))) {
 						lookup2.put(file.getName(), token.get(j));
 					}
@@ -370,6 +381,7 @@ public class TextExtractPar implements Serializable {
 					if (!lookup1.get(token.get(j)).contains(file.getName())) {
 						lookup1.put(token.get(j), file.getName());
 					}
+					*/
 
 				}
 
