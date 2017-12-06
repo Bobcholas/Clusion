@@ -71,30 +71,31 @@ public class SSEwSU {
 	private Server server;
 	private Manager manager;
 	
-	private static final ECCurve curve = ECNamedCurveTable.getParameterSpec("secp224r1").getCurve();
+	private static final ECCurve curve = ECNamedCurveTable.getParameterSpec("curve25519").getCurve();
 
 	public SSEwSU(Multimap<String, String> mm, int securityParameter) 
 			throws InvalidKeyException, InvalidAlgorithmParameterException, NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException, IOException, InterruptedException, ExecutionException {
 		
 		this.securityParameter = securityParameter;
-		this.rdh = new ECRDH(ECNamedCurveTable.getParameterSpec("secp224r1")); //rdh;
+		this.rdh = new ECRDH(ECNamedCurveTable.getParameterSpec("curve25519")); //rdh;
 
 		this.server = new Server();
 		this.manager = new Manager();
 		
-//		long startTime = System.nanoTime();
+		long startTime = System.nanoTime();
 		this.manager.setup(this.server, mm);
-//		double elapsed = ((System.nanoTime() - startTime) / nano);
-//		System.out.println(String.format("Setup took %.2fms", 1000 * elapsed));
-//		System.out.println(String.format("%d document word pairs inserted [%.4fms/pair]\n%d total documents", 
-//				this.server.encryptedMM.size(), 
-//				1000 * elapsed / this.server.encryptedMM.size(),
-//				this.manager.documents.size()));
+		double elapsed = ((System.nanoTime() - startTime) / nano);
+		debugPrintf("Setup took %.2fms\n", 1000 * elapsed);
+		debugPrintf("%d document word pairs inserted [%.4fms/pair]\n%d total documents\n", 
+				this.server.encryptedMM.size(), 
+				1000 * elapsed / this.server.encryptedMM.size(),
+				this.manager.documents.size());
 		
-//		long serverSize = MemoryUtil.deepMemoryUsageOf(this.server) / 1024 / 1024;
-//		System.out.printf("Server memory usage: %d MB\n", serverSize);
-//		TestSSEwSU.debugOutput.write(String.format("SERVER SIZE: %d MB\n", serverSize));
-//		TestSSEwSU.debugOutput.write(String.format("SERVER UPLOAD TIME: %.2fms\n", 1000 * elapsed));
+		if (debug) {
+			long serverSizeMB = MemoryUtil.deepMemoryUsageOf(this.server) / 1024 / 1024;
+			debugPrintf("SERVER SIZE: %d MB\n", serverSizeMB);
+			debugPrintf("SERVER UPLOAD TIME: %.2fms\n", 1000 * elapsed);
+		}
 	}
 
 	public void enroll(String username) throws UserAlreadyExists {
@@ -140,8 +141,8 @@ public class SSEwSU {
 			System.out.println("User " + username + " does not exist");
 			return null;
 		}
-//		debugPrintf("User %s has access to %d files\n", username, 
-//				this.manager.users.get(username).accessList.size());
+		debugPrintf("User %s has access to %d files\n", username, 
+				this.manager.users.get(username).accessList.size());
 		return this.manager.users.get(username).search(keyword);
 	}
 	
@@ -192,7 +193,6 @@ public class SSEwSU {
 	 */
 	public byte[] F(byte[] key, byte[] x) throws UnsupportedEncodingException { 
 		// must be in F_p for prime p
-		//TODO: this has slight bias in randomness (or lots if field order is larger than HMAC order); look into another way?
 		BigInteger tmp = new BigInteger(CryptoPrimitives.generateHmac(key, x));
 		return tmp.mod(rdh.getFieldOrder()).toByteArray(); 
 	}
@@ -424,10 +424,10 @@ public class SSEwSU {
 					tmp = listOfDocWordPairs.subList(workPerThread * i, workPerThread * (i + 1));
 				}
 				inputs.add(i, tmp);
-				System.out.println("Thread #" + (i + 1) + " gets " + tmp.size() + " pairs");
+				debugPrintf("Thread #" + (i + 1) + " gets " + tmp.size() + " pairs\n");
 			}
 
-			System.out.println("End of Partitioning\n");
+			debugPrintf("End of Partitioning\n");
 
 			Map<ECPoint, byte[]> encryptedMM = new HashMap<ECPoint, byte[]>();
 			List<Future<Map<ECPoint, byte[]>>> futures = new ArrayList<>();
@@ -455,8 +455,10 @@ public class SSEwSU {
 			this.server.setup(encryptedMM);
 			
 
-//			long serverSize = MemoryUtil.deepMemoryUsageOf(encryptedMM) / 1024;
-//			TestSSEwSU.debugOutput.write(String.format("Server upload bandwidth: %d kB\n", serverSize));
+			if (debug) {
+				long serverSize = MemoryUtil.deepMemoryUsageOf(encryptedMM) / 1024;
+				debugPrintf("Server upload bandwidth: %d kB\n", serverSize);
+			}
 		}
 		
 		public Map<ECPoint, byte[]> encryptDocWords(final Collection<Entry<String,String>> documentWordPairs) 
@@ -474,11 +476,10 @@ public class SSEwSU {
 				encryptedMM.put(xCT, document.encryptedMetadata);
 				
 				if ((i++ % 2500) == 0) {
-					synchronized (System.out) {
-					System.out.println("Thread " + Thread.currentThread().getId() + " is " + 
-							(100 * i)/documentWordPairs.size() + "% done "
-									+ "[" + i + "/" + documentWordPairs.size() + "]"); 
-					}
+					debugPrintf("Thread %d is %.2f%% done [%d/%d]\n",
+							Thread.currentThread().getId(), 
+							(double) (100.0 * (double)i)/documentWordPairs.size(),
+							i, documentWordPairs.size()); 
 				}
 			}
 			return encryptedMM;
@@ -581,7 +582,7 @@ public class SSEwSU {
 		}
 
 		public Collection<String> search(String keyword) throws InvalidKeyException, InvalidAlgorithmParameterException, NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException, IOException {
-//			long startTime = System.nanoTime();
+			long startTime = System.nanoTime();
 			
 			Set<byte[]> queryCiphertexts = new HashSet<>();
 			Map<ByteBuffer, byte[]> authTokenIDToEncryptionKey = new HashMap<>();
@@ -594,33 +595,34 @@ public class SSEwSU {
 				authTokenIDToEncryptionKey.put(ByteBuffer.wrap(authTokenID), document.encKey);
 			}
 
+			long timeSpentCalculatingMemory = 0;
+			long serverStartTime = System.nanoTime();
+			if (debug)
+				debugPrintf("Search query    bandwidth [user -> server]: %d B\n", 
+					MemoryUtil.deepMemoryUsageOf(queryCiphertexts));
+			timeSpentCalculatingMemory += ((System.nanoTime() - serverStartTime) / SSEwSU.nano);
+			
 			// send query ciphertext to server
-//			long timeSpentCalculatingMemory = 0;
-//			long serverStartTime = System.nanoTime();
-//			debugPrintf("Search query    bandwidth [user -> server]: %d B\n", 
-//					MemoryUtil.deepMemoryUsageOf(queryCiphertexts) );
-//			TestSSEwSU.debugOutput.write(String.format("BANDWIDTH: %d\t%d\n", 
-//					queryCiphertexts.size(), MemoryUtil.deepMemoryUsageOf(queryCiphertexts)));
-//			timeSpentCalculatingMemory += ((System.nanoTime() - serverStartTime) / SSEwSU.nano);
 			Set<ServerResponse> queryResponse = this.server.search(queryCiphertexts);
-//			long calcStartTime = System.nanoTime();
-//			debugPrintf("Search response bandwidth [user <- server]: %d B\n", 
-//					MemoryUtil.deepMemoryUsageOf(queryResponse) );
-//			timeSpentCalculatingMemory += ((System.nanoTime() - calcStartTime) / SSEwSU.nano);
-//			double serverElapsed = ((System.nanoTime() - serverStartTime) / SSEwSU.nano);
-//			debugPrintf("Server search time: %.2fms\n", 1000 * (serverElapsed - timeSpentCalculatingMemory));
-//			TestSSEwSU.debugOutput.write(String.format("SERVER SEARCH TIME: %d\t%.2fms\n", 
-//					queryCiphertexts.size(), 1000 * (serverElapsed - timeSpentCalculatingMemory)));
+			// done with server search
+			
+			long calcStartTime = System.nanoTime();
+			if (debug)
+				debugPrintf("Search response bandwidth [user <- server]: %d B\n", 
+					MemoryUtil.deepMemoryUsageOf(queryResponse) );
+			timeSpentCalculatingMemory += ((System.nanoTime() - calcStartTime) / SSEwSU.nano);
+			double serverElapsed = ((System.nanoTime() - serverStartTime) / SSEwSU.nano);
+			debugPrintf("Server search time: %.2fms\n", 1000 * (serverElapsed - timeSpentCalculatingMemory));
+			
 			// decrypt response from server
 			Collection<String> result = new HashSet<String>(queryResponse.size());
 			for (ServerResponse encryptedResponse : queryResponse) {
 				String metadata = Decrypt(authTokenIDToEncryptionKey.get(ByteBuffer.wrap(encryptedResponse.authTokenID)), encryptedResponse.yCT);
 				result.add(metadata);
 			}
-//			double elapsed = ((System.nanoTime() - startTime) / SSEwSU.nano);
-//			debugPrintf("User search time: %.2fms\n", 1000 * (elapsed - serverElapsed - timeSpentCalculatingMemory));
-//			TestSSEwSU.debugOutput.write(String.format("SERVER SEARCH TIME: %d\t%.2fms\n", 
-//					queryCiphertexts.size(), 1000 * (elapsed - serverElapsed - timeSpentCalculatingMemory)));
+			
+			double elapsed = ((System.nanoTime() - startTime) / SSEwSU.nano);
+			debugPrintf("User search time: %.2fms\n", 1000 * (elapsed - serverElapsed - timeSpentCalculatingMemory));
 			return result;
 		}
 		
@@ -701,7 +703,9 @@ public class SSEwSU {
 	
 	public void debugPrintf(String format, Object... args) {
 		if (debug) {
-			System.out.printf(format, args);
+			synchronized (System.out) {
+				System.out.printf(format, args);
+			}
 		}
 	}
 

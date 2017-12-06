@@ -52,7 +52,6 @@ public class TestSSEwSU {
 			+ "> (h)elp\n";
 
 	public final static boolean isChatCorpus = true;
-//	public static BufferedWriter debugOutput;
 
 	public static void main(String[] args) 
 			throws InvalidKeyException, InvalidAlgorithmParameterException, 
@@ -63,10 +62,6 @@ public class TestSSEwSU {
 
 		System.out.print("Enter the relative path name of the folder that contains the files to make searchable: ");
 		String pathName = input.readLine();
-//		System.out.print("Enter the relative path name of the file to hold outpt: ");
-//		String outputFilename = input.readLine();
-		
-//		debugOutput = new BufferedWriter(new FileWriter(outputFilename));
 
 		ArrayList<File> listOfFile = new ArrayList<File>();
 		TextProc.listf(pathName, listOfFile);
@@ -82,31 +77,12 @@ public class TestSSEwSU {
 		//		SSEwSU<ByteBuffer, NaiveRDH> sse = new SSEwSU<ByteBuffer, NaiveRDH>(TextExtractPar.lp2, rdh, securityParameter);
 		SSEwSU sse = new SSEwSU(TextExtractPar.lp2, securityParameter);
 		
-		// TESTING getting server size/upload bandwidth/computation time
-//		for (int numWords = 0; numWords <= 10000; numWords += 1000) {
-//			debugOutput.write("NUMWORDS: " + String.valueOf(numWords) + "\n");
-//			Multimap<String, String> tmpMM = ArrayListMultimap.create();
-//			String docName = "doc";
-//			for (int i = 0; i < numWords; ++i) {
-//				tmpMM.put(docName, "word" + String.valueOf(i));
-//			}
-//			SSEwSU sseTmp = new SSEwSU(tmpMM, securityParameter);
-//		}
-//
-//	    debugOutput.close();
 		System.out.printf("Number of unique words: %d\n", TextExtractPar.lp1.keySet().size());
 
 		// create users and access permissions if applicable
-		//		In a separate experiment, we store the Ubuntu Chat Corpus (UCC) [14] with over
-		//		700000  users  using  our  scheme.   Like  emails,  the  chat  logs  provide  an  excellent  framework  for  multi-user
-		//		searchable schemes.  We split the chat corpus into days.  That is, each day of history becomes a single file.
-		//		All users who appear in the chat log for a day will have read rights.  Each of the appearing users will also
-		//		receive write rights with probability 1/2. For this dataset, we also stem the input for each language.  Stemming
-		//		removes common words as well as providing pseudonyms
 		if (isChatCorpus) {
 			System.out.println("Creating users..\n");
 			// mmap : username -> set{filenames to have access to}
-			Pattern pattern = Pattern.compile("\\[.*\\] <(.*)>.*");
 			Runtime rt = Runtime.getRuntime();
 
 			Multimap<String, String> userAccesses = ArrayListMultimap.create();
@@ -142,7 +118,6 @@ public class TestSSEwSU {
 			i = 0;
 			for (String username : userAccesses.keySet()) {
 				try {
-//					debugOutput.write(String.format("%s\t%d\n", username, userAccesses.get(username).size()));
 					for (String documentName : userAccesses.get(username)) {
 						sse.shareDoc(documentName, username);
 					}
@@ -157,23 +132,10 @@ public class TestSSEwSU {
 		}
 
 		System.out.println("\n" + HELP_TEXT);
-		
-		// do quick tests
-//		String defaultUser = "sorin";
-//		String defaultKeyword = "hello";
-//		sse.enroll(defaultUser);
-//		for (int i = 0; i <= 10000; i += 1000) {
-//			long startTime = System.nanoTime();
-//			for (int j = i - 1000; j < i && j >= 0; ++j)
-//				sse.shareDoc("/home/sorin/tmp/benchmark/" + j + ".txt", defaultUser);
-//			sse.query(defaultUser, defaultKeyword);
-//			double elapsed = ((System.nanoTime() - startTime) / SSEwSU.nano);
-//			System.out.println("[" + String.format("%.2fms", 1000 * elapsed) + 
-//					"]: Successfully Shared " + defaultUser);
-//		}
-		//
 
 		boolean isDone = false;
+		
+		// begin REPL
 		while (!isDone) {
 			System.out.print(">> ");
 			String command = input.readLine();
@@ -336,8 +298,6 @@ public class TestSSEwSU {
 			}
 
 		}
-
-//	    debugOutput.close();
 	}
 
 }
