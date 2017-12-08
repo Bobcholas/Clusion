@@ -4,7 +4,6 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.math.BigInteger;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
@@ -17,14 +16,12 @@ import java.util.concurrent.ExecutionException;
 import javax.crypto.NoSuchPaddingException;
 
 import org.bouncycastle.jce.ECNamedCurveTable;
-import org.bouncycastle.jce.spec.ECNamedCurveParameterSpec;
 import org.crypto.sse.CryptoPrimitives.ECRDH;
-import org.crypto.sse.CryptoPrimitives.RewritableDeterministicHash;
+import org.crypto.sse.SSEwSU.DefaultSSEwSUSettings;
 import org.crypto.sse.SSEwSU.ECPointWrapper;
-import org.crypto.sse.SSEwSU.SSEwSU;
-import org.crypto.sse.SSEwSU.SSEwSU.DocumentDoesntExist;
-import org.crypto.sse.SSEwSU.SSEwSU.UserAlreadyExists;
-import org.crypto.sse.SSEwSU.SSEwSU.UserDoesntExist;
+import org.crypto.sse.SSEwSU.LocalSSEwSU;
+import org.crypto.sse.SSEwSU.Manager;
+import org.crypto.sse.SSEwSU.SSEwSUSettings;
 
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Multimap;
@@ -46,7 +43,7 @@ public class TestSSEwSU {
 	public static void main(String[] args) 
 			throws InvalidKeyException, InvalidAlgorithmParameterException, 
 			NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException, 
-			InvalidKeySpecException, IOException, InterruptedException, ExecutionException, UserAlreadyExists, UserDoesntExist, DocumentDoesntExist {
+			InvalidKeySpecException, IOException, InterruptedException, ExecutionException, Manager.UserAlreadyExists, Manager.UserDoesntExist, Manager.DocumentDoesntExist {
 
 		BufferedReader input = new BufferedReader(new InputStreamReader(System.in));
 
@@ -62,10 +59,8 @@ public class TestSSEwSU {
 
 		final int securityParameter = 256;
 		ECRDH ecrdh = new ECRDH(ECNamedCurveTable.getParameterSpec("curve25519")); 
-		 
-		//		NaiveRDH rdh = new NaiveRDH(securityParameter);
-		//		SSEwSU<ByteBuffer, NaiveRDH> sse = new SSEwSU<ByteBuffer, NaiveRDH>(TextExtractPar.lp2, rdh, securityParameter);
-		SSEwSU<ECPointWrapper, ECRDH> sse = new SSEwSU<ECPointWrapper, ECRDH>(TextExtractPar.lp2, ecrdh, securityParameter);
+		SSEwSUSettings<ECPointWrapper, ECRDH> settings = new DefaultSSEwSUSettings<>(securityParameter, ecrdh);		 
+		LocalSSEwSU<ECPointWrapper, ECRDH> sse = new LocalSSEwSU<>(TextExtractPar.lp2, settings);
 		
 		System.out.printf("Number of unique words: %d\n", TextExtractPar.lp1.keySet().size());
 
@@ -101,7 +96,7 @@ public class TestSSEwSU {
 					if (++i % 2500 == 0)
 						System.out.println("enrolling users progress: " + i + "/" + userAccesses.keySet().size() + 
 								"[" + ((100.0*i/userAccesses.keySet().size())) + "]");
-				} catch (UserAlreadyExists e) {
+				} catch (Manager.UserAlreadyExists e) {
 					e.printStackTrace();
 				}
 			}
@@ -114,7 +109,7 @@ public class TestSSEwSU {
 					if (++i % 2500 == 0)
 						System.out.println("sharing docs progress: " + i + "/" + userAccesses.keySet().size() + 
 								"[" + ((100.0*i/userAccesses.keySet().size())) + "]");
-				} catch (UserDoesntExist | DocumentDoesntExist e) {
+				} catch (Manager.UserDoesntExist | Manager.DocumentDoesntExist e) {
 					e.printStackTrace();
 				}
 			}
@@ -149,7 +144,7 @@ public class TestSSEwSU {
 					try {
 						sse.enroll(username);
 						System.out.println("Successfully registered new user: " + username);
-					} catch (UserAlreadyExists e) {
+					} catch (Manager.UserAlreadyExists e) {
 						System.out.println("Error: cannot enroll " + username + " user already exists");
 					}
 				}
@@ -169,12 +164,12 @@ public class TestSSEwSU {
 					try {
 						long startTime = System.nanoTime();
 						Collection<String> names = sse.shareDoc(documentName, username);
-						double elapsed = ((System.nanoTime() - startTime) / SSEwSU.nano);
+						double elapsed = ((System.nanoTime() - startTime) / LocalSSEwSU.nano);
 						System.out.println("[" + String.format("%.2fms", 1000 * elapsed) + 
 								"]: Successfully Shared " + names.size() + " documents " + names + " with " + username);
-					} catch (UserDoesntExist e) {
+					} catch (Manager.UserDoesntExist e) {
 						System.out.println("Error: user " + username + " does not exist");
-					} catch (DocumentDoesntExist e) {
+					} catch (Manager.DocumentDoesntExist e) {
 						System.out.println("Error: document " + documentName + " does not exist");
 					}
 				}
@@ -194,12 +189,12 @@ public class TestSSEwSU {
 					try {
 						long startTime = System.nanoTime();
 						Collection<String> names = sse.unshareDoc(documentName, username);
-						double elapsed = ((System.nanoTime() - startTime) / SSEwSU.nano);
+						double elapsed = ((System.nanoTime() - startTime) / LocalSSEwSU.nano);
 						System.out.println("[" + String.format("%.2fms", 1000 * elapsed) + 
 								"]: Successfully Unshared " + names.size() + " documents " + names + " with " + username);
-					} catch (UserDoesntExist e) {
+					} catch (Manager.UserDoesntExist e) {
 						System.out.println("Error: user " + username + " does not exist");
-					} catch (DocumentDoesntExist e) {
+					} catch (Manager.DocumentDoesntExist e) {
 						System.out.println("Error: document " + documentName + " does not exist");
 					}
 				}
@@ -218,7 +213,7 @@ public class TestSSEwSU {
 
 				long startTime = System.nanoTime();
 				Collection<String> documentNames = sse.query(username, keyword);
-				double elapsed = ((System.nanoTime() - startTime) / SSEwSU.nano);
+				double elapsed = ((System.nanoTime() - startTime) / LocalSSEwSU.nano);
 
 				if (documentNames != null) {
 					System.out.print("[" + String.format("%.2fms", 1000 * elapsed) + "]: " + documentNames.size() + " documents found: \n");
@@ -242,7 +237,7 @@ public class TestSSEwSU {
 
 				long startTime = System.nanoTime();
 				boolean success = sse.addKeyword(username, keyword, docName);
-				double elapsed = ((System.nanoTime() - startTime) / SSEwSU.nano);
+				double elapsed = ((System.nanoTime() - startTime) / LocalSSEwSU.nano);
 				if (success){
 					System.out.println("[" + String.format("%.2fms", 1000 * elapsed) + "]: " + " Keyword added.");
 				}else{
@@ -265,7 +260,7 @@ public class TestSSEwSU {
 
 				long startTime = System.nanoTime();
 				boolean success = sse.removeKeyword(username, keyword, docName);
-				double elapsed = ((System.nanoTime() - startTime) / SSEwSU.nano);
+				double elapsed = ((System.nanoTime() - startTime) / LocalSSEwSU.nano);
 				if (success){
 					System.out.println("[" + String.format("%.2fms", 1000 * elapsed) + "]: " + " Keyword added.");
 				}else{
