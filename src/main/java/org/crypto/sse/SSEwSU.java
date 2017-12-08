@@ -17,8 +17,6 @@
 package org.crypto.sse;
 
 import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.io.UnsupportedEncodingException;
 import java.math.BigInteger;
@@ -47,16 +45,12 @@ import java.util.regex.Pattern;
 import javax.crypto.NoSuchPaddingException;
 
 import org.apache.commons.lang.SerializationUtils;
-import org.bouncycastle.asn1.sec.SECNamedCurves;
-import org.bouncycastle.jce.ECNamedCurveTable;
-import org.bouncycastle.math.ec.ECCurve;
-import org.bouncycastle.math.ec.ECPoint;
-import org.crypto.sse.CryptoPrimitives.ECRDH;
+import org.crypto.sse.CryptoPrimitives.RewritableDeterministicHash;
 
 import com.google.common.collect.Multimap;
 import com.javamex.classmexer.MemoryUtil;
 
-public class SSEwSU {
+public class SSEwSU<CT_G extends Serializable, RDH extends RewritableDeterministicHash<CT_G>> {
 
 	public final static String START_STRING = "STARTSTRING";
 	public final static int idLengthBytes = 128 / 8;
@@ -66,18 +60,16 @@ public class SSEwSU {
 	private final static boolean debug = true;
 
 	public final int securityParameter;
-	public final ECRDH rdh;
+	public final RDH rdh;
 	
 	private Server server;
 	private Manager manager;
-	
-	private static final ECCurve curve = ECNamedCurveTable.getParameterSpec("curve25519").getCurve();
 
-	public SSEwSU(Multimap<String, String> mm, int securityParameter) 
+	public SSEwSU(Multimap<String, String> mm, RDH rdh, int securityParameter) 
 			throws InvalidKeyException, InvalidAlgorithmParameterException, NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException, IOException, InterruptedException, ExecutionException {
 		
 		this.securityParameter = securityParameter;
-		this.rdh = new ECRDH(ECNamedCurveTable.getParameterSpec("curve25519")); //rdh;
+		this.rdh = rdh;
 
 		this.server = new Server();
 		this.manager = new Manager();
@@ -216,42 +208,24 @@ public class SSEwSU {
 		return new String(CryptoPrimitives.decryptAES_CTR_String(ciphertext, key)); 
 	}
 
-	class Query implements Serializable {
+	static class Query<CT> implements Serializable {
 		private static final long serialVersionUID = -1891843663804523275L;
-		private transient byte[] authTokenID;
-		private transient ECPoint queryCiphertext;
+		private byte[] authTokenID;
+		private CT queryCiphertext;
 
-		Query(byte[] tokID, ECPoint ct) {
+		Query(byte[] tokID, CT ct) {
 			this.authTokenID = tokID;
 			this.queryCiphertext = ct;
 		}
-		
-		private void readObject(ObjectInputStream aInputStream) throws ClassNotFoundException, IOException
-	    {      
-	        int len = aInputStream.readInt();
-	        authTokenID = new byte[len];
-	        aInputStream.read(authTokenID);
-	        len = aInputStream.readInt();
-	        byte[] b = new byte[len];
-	        aInputStream.read(b);
-	        queryCiphertext = curve.decodePoint(b);
-	    }
-	 
-	    private void writeObject(ObjectOutputStream aOutputStream) throws IOException
-	    {
-	        aOutputStream.writeInt(authTokenID.length);
-	        aOutputStream.write(authTokenID);
-	        byte[] bs = queryCiphertext.getEncoded(true);
-	        aOutputStream.writeInt(bs.length);
-	        aOutputStream.write(bs);
-        }
 	}
-	class EditQuery {
+	
+	static class EditQuery<CT> implements Serializable {
+		private static final long serialVersionUID = 6418008390394745334L;
 		byte[] authTokenID;
-		ECPoint queryCiphertext;
+		CT queryCiphertext;
 		byte[] encryptedMetadata;
 
-		EditQuery(byte[] tokID, ECPoint ct, byte[] encryptedMetadata) {
+		EditQuery(byte[] tokID, CT ct, byte[] encryptedMetadata) {
 			this.authTokenID = tokID;
 			this.queryCiphertext = ct;
 			this.encryptedMetadata = encryptedMetadata;
@@ -271,7 +245,7 @@ public class SSEwSU {
 	class Server {
 
 		// map: EncryptedDocumentWordPair -> EncryptedDocumentMetadata
-		Map<ECPoint, byte[]> encryptedMM;
+		Map<CT_G, byte[]> encryptedMM;
 		// map: authTokenID -> authToken
 		Map<ByteBuffer, byte[]> authTokenMap;
 		Map<ByteBuffer, byte[]> authTokenEditMap;
@@ -284,7 +258,7 @@ public class SSEwSU {
 			this(false);
 		}
 		
-		public void setup(Map<ECPoint, byte[]> encryptedMM) {
+		public void setup(Map<CT_G, byte[]> encryptedMM) {
 			this.encryptedMM = encryptedMM;
 			this.authTokenMap = new HashMap<ByteBuffer, byte[]>();
 			if (editPerms){
@@ -295,13 +269,13 @@ public class SSEwSU {
 		public Set<ServerResponse> search(Set<byte[]> queryCiphertexts) {			
 			Set<ServerResponse> resultSet = new HashSet<ServerResponse>();
 			for (byte[] qCT : queryCiphertexts) {
-				Query query = (SSEwSU.Query) SerializationUtils.deserialize(qCT);
+				Query<CT_G> query = (SSEwSU.Query<CT_G>) SerializationUtils.deserialize(qCT);
 				byte[] authToken = authTokenMap.get(ByteBuffer.wrap(query.authTokenID));
 				if (authToken == null) {
 					continue;
 				}
 
-				ECPoint xCT = rdh.Apply(query.queryCiphertext, authToken);
+				CT_G xCT = rdh.Apply(query.queryCiphertext, authToken);
 				byte[] yCT = encryptedMM.get(xCT);
 				if (yCT != null)
 					resultSet.add(new ServerResponse(query.authTokenID, yCT));
@@ -327,21 +301,21 @@ public class SSEwSU {
 			}
 			authTokenEditMap.remove(ByteBuffer.wrap(authTokID));			
 		}
-		public void addKeyword(EditQuery query) {
+		public void addKeyword(EditQuery<CT_G> query) {
 			//TODO: Where does metadata come from? Presumably needs to be recalculated...
 			byte[] authTokenEdit = authTokenEditMap.get(ByteBuffer.wrap(query.authTokenID));
 			if (authTokenEdit == null){ //not authorized
 				return;
 			}
-			ECPoint newKeywordToken = rdh.Apply(query.queryCiphertext, authTokenEdit);
+			CT_G newKeywordToken = rdh.Apply(query.queryCiphertext, authTokenEdit);
 			encryptedMM.put(newKeywordToken, query.encryptedMetadata);
 		}
-		public void removeKeyword(EditQuery query) {
+		public void removeKeyword(EditQuery<CT_G> query) {
 			byte[] authTokenEdit = authTokenEditMap.get(ByteBuffer.wrap(query.authTokenID));
 			if (authTokenEdit == null){ //not authorized
 				return;
 			}
-			ECPoint newKeywordToken = rdh.Apply(query.queryCiphertext, authTokenEdit);
+			CT_G newKeywordToken = rdh.Apply(query.queryCiphertext, authTokenEdit);
 			encryptedMM.remove(newKeywordToken);			
 		}
 
@@ -429,13 +403,13 @@ public class SSEwSU {
 
 			debugPrintf("End of Partitioning\n");
 
-			Map<ECPoint, byte[]> encryptedMM = new HashMap<ECPoint, byte[]>();
-			List<Future<Map<ECPoint, byte[]>>> futures = new ArrayList<>();
+			Map<CT_G, byte[]> encryptedMM = new HashMap<CT_G, byte[]>();
+			List<Future<Map<CT_G, byte[]>>> futures = new ArrayList<>();
 			for (final Collection<Entry<String,String>> input : inputs) {
-				Callable<Map<ECPoint, byte[]>> callable = 
-						new Callable<Map<ECPoint, byte[]>>() {
+				Callable<Map<CT_G, byte[]>> callable = 
+						new Callable<Map<CT_G, byte[]>>() {
 					
-					public Map<ECPoint, byte[]> call() throws Exception {
+					public Map<CT_G, byte[]> call() throws Exception {
 						return encryptDocWords(input);
 					}
 					
@@ -445,12 +419,10 @@ public class SSEwSU {
 
 			service.shutdown();
 
-			for (Future<Map<ECPoint, byte[]>> future : futures) {
+			for (Future<Map<CT_G, byte[]>> future : futures) {
 				encryptedMM.putAll(future.get());
 			}
 			
-			// TODO randomize order of map (?)
-
 			// send encrypted map to server
 			this.server.setup(encryptedMM);
 			
@@ -461,18 +433,18 @@ public class SSEwSU {
 			}
 		}
 		
-		public Map<ECPoint, byte[]> encryptDocWords(final Collection<Entry<String,String>> documentWordPairs) 
+		public Map<CT_G, byte[]> encryptDocWords(final Collection<Entry<String,String>> documentWordPairs) 
 				throws InvalidKeyException, InvalidAlgorithmParameterException, NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException, IOException {
 			
 			// Build encrypted map from corpus of documents
 			int i = 0;
-			Map<ECPoint, byte[]> encryptedMM = new HashMap<ECPoint, byte[]>();
+			Map<CT_G, byte[]> encryptedMM = new HashMap<CT_G, byte[]>();
 			for (Entry<String,String> docWord : documentWordPairs) {
 				String documentName = docWord.getKey();
 				String word = docWord.getValue();
 				DocumentInfo document = documents.get(documentName);
 			
-				ECPoint xCT = rdh.H(document.Kd2Enc, F(document.Kd1, wordToID(word)));
+				CT_G xCT = rdh.H(document.Kd2Enc, F(document.Kd1, wordToID(word)));
 				encryptedMM.put(xCT, document.encryptedMetadata);
 				
 				if ((i++ % 2500) == 0) {
@@ -496,7 +468,7 @@ public class SSEwSU {
 				CryptoPrimitives.randomBytesBuffered(securityParameter)
 			}, this.server);
 			users.put(username, newUser);
-			return null;
+			return newUser;
 		}
 
 		public void shareDoc(String documentName, String username, boolean allowEdit) throws UserDoesntExist, DocumentDoesntExist, UnsupportedEncodingException {
@@ -590,8 +562,8 @@ public class SSEwSU {
 				// compute auth token
 				byte[] authTokenID = F(userKeys[1], document.documentID);
 				// compute query ciphertext
-				ECPoint queryCT = rdh.H(F(document.Kd1, wordToID(keyword)), F(userKeys[0], document.documentID));
-				queryCiphertexts.add(SerializationUtils.serialize(new Query(authTokenID, queryCT)));
+				CT_G queryCT = rdh.H(F(document.Kd1, wordToID(keyword)), F(userKeys[0], document.documentID));
+				queryCiphertexts.add(SerializationUtils.serialize(new Query<CT_G>(authTokenID, queryCT)));
 				authTokenIDToEncryptionKey.put(ByteBuffer.wrap(authTokenID), document.encKey);
 			}
 
@@ -626,18 +598,18 @@ public class SSEwSU {
 			return result;
 		}
 		
-		private ECPoint makeEditCiphertext(DocumentInfo document, String keyword) throws NoSuchAlgorithmException, UnsupportedEncodingException{
-			ECPoint editCT = rdh.H(F(document.Kd1, wordToID(keyword)), F(document.KdEdit, userKeys[0]));
+		private CT_G makeEditCiphertext(DocumentInfo document, String keyword) throws NoSuchAlgorithmException, UnsupportedEncodingException{
+			CT_G editCT = rdh.H(F(document.Kd1, wordToID(keyword)), F(document.KdEdit, userKeys[0]));
 			return editCT;
 		}
 		public void addKeyword(DocumentInfo document, String keyword) throws NoSuchAlgorithmException, UnsupportedEncodingException{
-			ECPoint editCT = makeEditCiphertext(document, keyword);
-			EditQuery editQuery = new EditQuery(F(userKeys[1], document.KdEdit), editCT, document.encryptedMetadata);
+			CT_G editCT = makeEditCiphertext(document, keyword);
+			EditQuery<CT_G> editQuery = new EditQuery<CT_G>(F(userKeys[1], document.KdEdit), editCT, document.encryptedMetadata);
 			server.addKeyword(editQuery);
 		}
 		public void removeKeyword(DocumentInfo document, String keyword) throws NoSuchAlgorithmException, UnsupportedEncodingException{
-			ECPoint editCT = makeEditCiphertext(document, keyword);
-			EditQuery editQuery = new EditQuery(F(userKeys[1], document.KdEdit), editCT, null);
+			CT_G editCT = makeEditCiphertext(document, keyword);
+			EditQuery<CT_G> editQuery = new EditQuery<CT_G>(F(userKeys[1], document.KdEdit), editCT, null);
 			server.removeKeyword(editQuery);
 		}
 
