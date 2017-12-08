@@ -14,7 +14,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-package org.crypto.sse;
+package org.crypto.sse.SSEwSU;
 
 import java.io.IOException;
 import java.io.Serializable;
@@ -45,6 +45,7 @@ import java.util.regex.Pattern;
 import javax.crypto.NoSuchPaddingException;
 
 import org.apache.commons.lang.SerializationUtils;
+import org.crypto.sse.CryptoPrimitives;
 import org.crypto.sse.CryptoPrimitives.RewritableDeterministicHash;
 
 import com.google.common.collect.Multimap;
@@ -208,7 +209,7 @@ public class SSEwSU<CT_G extends Serializable, RDH extends RewritableDeterminist
 		return new String(CryptoPrimitives.decryptAES_CTR_String(ciphertext, key)); 
 	}
 
-	static class Query<CT> implements Serializable {
+	static class Query<CT extends Serializable> implements Serializable {
 		private static final long serialVersionUID = -1891843663804523275L;
 		private byte[] authTokenID;
 		private CT queryCiphertext;
@@ -219,7 +220,7 @@ public class SSEwSU<CT_G extends Serializable, RDH extends RewritableDeterminist
 		}
 	}
 	
-	static class EditQuery<CT> implements Serializable {
+	static class EditQuery<CT extends Serializable> implements Serializable {
 		private static final long serialVersionUID = 6418008390394745334L;
 		byte[] authTokenID;
 		CT queryCiphertext;
@@ -232,7 +233,8 @@ public class SSEwSU<CT_G extends Serializable, RDH extends RewritableDeterminist
 		}
 	}
 	
-	static class ServerResponse {
+	static class ServerResponse implements Serializable {
+		private static final long serialVersionUID = -5797489427757450005L;
 		byte[] authTokenID;
 		byte[] yCT;
 		

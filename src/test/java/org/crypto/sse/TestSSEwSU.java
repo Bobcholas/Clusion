@@ -4,9 +4,6 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
-import java.io.Serializable;
 import java.math.BigInteger;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
@@ -21,12 +18,13 @@ import javax.crypto.NoSuchPaddingException;
 
 import org.bouncycastle.jce.ECNamedCurveTable;
 import org.bouncycastle.jce.spec.ECNamedCurveParameterSpec;
-import org.bouncycastle.math.ec.ECCurve;
-import org.bouncycastle.math.ec.ECPoint;
+import org.crypto.sse.CryptoPrimitives.ECRDH;
 import org.crypto.sse.CryptoPrimitives.RewritableDeterministicHash;
-import org.crypto.sse.SSEwSU.DocumentDoesntExist;
-import org.crypto.sse.SSEwSU.UserAlreadyExists;
-import org.crypto.sse.SSEwSU.UserDoesntExist;
+import org.crypto.sse.SSEwSU.ECPointWrapper;
+import org.crypto.sse.SSEwSU.SSEwSU;
+import org.crypto.sse.SSEwSU.SSEwSU.DocumentDoesntExist;
+import org.crypto.sse.SSEwSU.SSEwSU.UserAlreadyExists;
+import org.crypto.sse.SSEwSU.SSEwSU.UserDoesntExist;
 
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Multimap;
@@ -45,91 +43,6 @@ public class TestSSEwSU {
 
 	public final static boolean isChatCorpus = true;
 	
-	public static class ECPointWrapper implements Serializable {
-
-		private static final long serialVersionUID = 3405642266930273962L;
-		private transient String  _curveName;
-		private transient ECPoint _point;
-
-		public ECPointWrapper(ECPoint point, String curveName) {
-			_point = point;
-			_curveName = curveName;
-		}
-		
-		private void readObject(ObjectInputStream aInputStream) throws ClassNotFoundException, IOException
-	    {      
-			aInputStream.defaultReadObject();
-			_curveName = aInputStream.readUTF();
-			ECCurve curve = ECNamedCurveTable.getParameterSpec(_curveName).getCurve();
-			int len = aInputStream.readInt();
-	        byte[] b = new byte[len];
-	        aInputStream.read(b);
-	        _point = curve.decodePoint(b);
-	    }
-	 
-	    private void writeObject(ObjectOutputStream aOutputStream) throws IOException
-	    {
-	    	aOutputStream.defaultWriteObject();
-	    	aOutputStream.writeUTF(_curveName);
-	        byte[] bs = _point.getEncoded(true);
-	        aOutputStream.writeInt(bs.length);
-	        aOutputStream.write(bs);
-        }
-	    
-	    @Override
-	    public int hashCode() {
-	        return _curveName.hashCode() ^ _point.hashCode();
-	    }
-
-	    @Override
-	    public boolean equals(Object obj) {
-	    	ECPointWrapper ecp = (ECPointWrapper) obj;
-	        return _curveName.equals(ecp._curveName) && _point.equals(ecp._point);
-	    }
-	}
-	
-	public static class ECRDH2 implements RewritableDeterministicHash<ECPointWrapper> 
-	{
-		public final BigInteger fieldOrder;
-		public final ECPoint generator;
-		public final String curveName;
-		
-		/**
-		 * Note that the security parameter depends on which elliptic curve is used; its length is the security parameter's length.
-		 * @param params The elliptic curve to use.
-		 */
-		ECRDH2(ECNamedCurveParameterSpec params) { 
-			this.curveName = params.getName();
-			this.fieldOrder = params.getN();
-			this.generator = params.getG().multiply(new BigInteger(CryptoPrimitives.randomBytes(params.getCurve().getFieldSize())).mod(fieldOrder));
-		}
-
-		@Override
-		public ECPointWrapper H(byte[] A, byte[] B) {
-			BigInteger tmp = new BigInteger(A);
-			BigInteger tmp2 = new BigInteger(B);
-			return new ECPointWrapper(generator.multiply(tmp.multiply(tmp2).mod(fieldOrder)), curveName);
-		}
-
-		@Override
-		public byte[] GenToken(byte[] C, byte[] D) {
-			BigInteger tmp = new BigInteger(C);
-			BigInteger tmp2 = new BigInteger(D);
-			return (tmp.multiply(tmp2.modInverse(fieldOrder))).mod(fieldOrder).toByteArray();
-		}
-
-		@Override
-		public ECPointWrapper Apply(ECPointWrapper ct, byte[] token) {
-			return new ECPointWrapper(ct._point.multiply(new BigInteger(token)), curveName);
-		}
-
-		@Override
-		public BigInteger getFieldOrder() {
-			return this.fieldOrder;
-		}
-		
-	}
-
 	public static void main(String[] args) 
 			throws InvalidKeyException, InvalidAlgorithmParameterException, 
 			NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException, 
@@ -148,11 +61,11 @@ public class TestSSEwSU {
 		System.out.println("\nBeginning of Encrypted Multi-map creation \n");
 
 		final int securityParameter = 256;
-		 ECRDH2 ecrdh = new ECRDH2(ECNamedCurveTable.getParameterSpec("curve25519")); 
+		ECRDH ecrdh = new ECRDH(ECNamedCurveTable.getParameterSpec("curve25519")); 
 		 
 		//		NaiveRDH rdh = new NaiveRDH(securityParameter);
 		//		SSEwSU<ByteBuffer, NaiveRDH> sse = new SSEwSU<ByteBuffer, NaiveRDH>(TextExtractPar.lp2, rdh, securityParameter);
-		SSEwSU<ECPointWrapper, ECRDH2> sse = new SSEwSU<ECPointWrapper, ECRDH2>(TextExtractPar.lp2, ecrdh, securityParameter);
+		SSEwSU<ECPointWrapper, ECRDH> sse = new SSEwSU<ECPointWrapper, ECRDH>(TextExtractPar.lp2, ecrdh, securityParameter);
 		
 		System.out.printf("Number of unique words: %d\n", TextExtractPar.lp1.keySet().size());
 

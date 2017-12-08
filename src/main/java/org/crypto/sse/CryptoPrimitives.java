@@ -34,6 +34,8 @@ import org.bouncycastle.jce.ECNamedCurveTable;
 import org.bouncycastle.jce.spec.ECNamedCurveParameterSpec;
 import org.bouncycastle.jce.spec.ECNamedCurveSpec;
 import org.bouncycastle.math.ec.ECPoint;
+import org.crypto.sse.CryptoPrimitives.RewritableDeterministicHash;
+import org.crypto.sse.SSEwSU.ECPointWrapper;
 
 import javax.crypto.*;
 import javax.crypto.spec.IvParameterSpec;
@@ -836,7 +838,7 @@ public class CryptoPrimitives {
 	// Sorin Vatasoiu & Nick Cunningham
 	// ***********************************************************************************************//
 
-	interface RewritableDeterministicHash<G> 
+	public interface RewritableDeterministicHash<G> 
 	{
 		/**
 		 * Hashes two values together rewritably
@@ -898,25 +900,27 @@ public class CryptoPrimitives {
 		
 	}
 	
-	public static class ECRDH implements RewritableDeterministicHash<ECPoint> 
+	public static class ECRDH implements RewritableDeterministicHash<ECPointWrapper> 
 	{
 		public final BigInteger fieldOrder;
 		public final ECPoint generator;
+		public final String curveName;
 		
 		/**
 		 * Note that the security parameter depends on which elliptic curve is used; its length is the security parameter's length.
 		 * @param params The elliptic curve to use.
 		 */
 		ECRDH(ECNamedCurveParameterSpec params) { 
+			this.curveName = params.getName();
 			this.fieldOrder = params.getN();
-			this.generator = params.getG().multiply(new BigInteger(randomBytes(params.getCurve().getFieldSize())).mod(fieldOrder));
+			this.generator = params.getG().multiply(new BigInteger(CryptoPrimitives.randomBytes(params.getCurve().getFieldSize())).mod(fieldOrder));
 		}
 
 		@Override
-		public ECPoint H(byte[] A, byte[] B) {
+		public ECPointWrapper H(byte[] A, byte[] B) {
 			BigInteger tmp = new BigInteger(A);
 			BigInteger tmp2 = new BigInteger(B);
-			return this.generator.multiply(tmp.multiply(tmp2).mod(fieldOrder));
+			return new ECPointWrapper(generator.multiply(tmp.multiply(tmp2).mod(fieldOrder)), curveName);
 		}
 
 		@Override
@@ -927,8 +931,8 @@ public class CryptoPrimitives {
 		}
 
 		@Override
-		public ECPoint Apply(ECPoint ct, byte[] token) {
-			return ct.multiply(new BigInteger(token));
+		public ECPointWrapper Apply(ECPointWrapper ct, byte[] token) {
+			return new ECPointWrapper(ct.get_point().multiply(new BigInteger(token)), curveName);
 		}
 
 		@Override
