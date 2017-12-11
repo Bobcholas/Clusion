@@ -28,6 +28,7 @@ public interface SSEwSUSettings<CT_G extends Serializable, RDH extends Rewritabl
 
 	public RDH getRDH();
 	public int getSecurityParameter();
+	public int getIDLength();
 
 	public byte[] wordToID(String keyword);
 	public byte[] documentNameToID(String documentName);

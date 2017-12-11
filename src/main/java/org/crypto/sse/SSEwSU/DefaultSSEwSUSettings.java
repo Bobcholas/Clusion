@@ -1,7 +1,6 @@
 package org.crypto.sse.SSEwSU;
 
 import java.io.IOException;
-import java.io.Serializable;
 import java.io.UnsupportedEncodingException;
 import java.math.BigInteger;
 import java.security.InvalidAlgorithmParameterException;
@@ -14,25 +13,21 @@ import java.util.Arrays;
 import javax.crypto.NoSuchPaddingException;
 
 import org.bouncycastle.crypto.RuntimeCryptoException;
+import org.bouncycastle.jce.ECNamedCurveTable;
 import org.crypto.sse.CryptoPrimitives;
-import org.crypto.sse.CryptoPrimitives.RewritableDeterministicHash;
+import org.crypto.sse.CryptoPrimitives.ECRDH;
 
-public class DefaultSSEwSUSettings<CT_G extends Serializable, RDH extends RewritableDeterministicHash<CT_G>> 
-	implements SSEwSUSettings<CT_G, RDH> {
+public class DefaultSSEwSUSettings implements SSEwSUSettings<ECPointWrapper, ECRDH> {
 	
 	public final static int idLengthBytes = 128 / 8;
 	public final static double nano = 1000000000.0;
 	public final static int AES_IV_LENGTH = 16;
-	public final static int METADATA_LENGTH = 256;
-	public final static boolean isDebug = true;
+	public final static int METADATA_LENGTH = 128;
+	public static boolean isDebug = true;
+	public final static int securityParameter = 256;
+	public final static ECRDH rdh = new ECRDH(ECNamedCurveTable.getParameterSpec("curve25519"));
 	
-	private final int securityParameter;
-	private final RDH rdh;
-	
-	public DefaultSSEwSUSettings(int securityParameter, RDH rdh) {
-		this.securityParameter = securityParameter;
-		this.rdh = rdh;
-	}
+	public DefaultSSEwSUSettings() {}
 
 	@Override
 	public byte[] F(byte[] key, byte[] x) { 
@@ -92,7 +87,7 @@ public class DefaultSSEwSUSettings<CT_G extends Serializable, RDH extends Rewrit
 	}
 
 	@Override
-	public RDH getRDH() {
+	public ECRDH getRDH() {
 		return rdh;
 	}
 
@@ -104,5 +99,10 @@ public class DefaultSSEwSUSettings<CT_G extends Serializable, RDH extends Rewrit
 	@Override
 	public boolean isDebug() {
 		return isDebug;
+	}
+
+	@Override
+	public int getIDLength() {
+		return idLengthBytes;
 	}
 }

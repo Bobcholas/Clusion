@@ -56,13 +56,11 @@ public class TestSSEwSU {
 
 		// Construction of the global multi-map
 		System.out.println("\nBeginning of Encrypted Multi-map creation \n");
-
-		final int securityParameter = 256;
-		ECRDH ecrdh = new ECRDH(ECNamedCurveTable.getParameterSpec("curve25519")); 
-		SSEwSUSettings<ECPointWrapper, ECRDH> settings = new DefaultSSEwSUSettings<>(securityParameter, ecrdh);		 
-		LocalSSEwSU<ECPointWrapper, ECRDH> sse = new LocalSSEwSU<>(TextExtractPar.lp2, settings);
+		
+		LocalSSEwSU<ECPointWrapper, ECRDH> sse = new LocalSSEwSU<>(TextExtractPar.lp2, new DefaultSSEwSUSettings());
 		
 		System.out.printf("Number of unique words: %d\n", TextExtractPar.lp1.keySet().size());
+		System.out.printf("Number of unique documents: %d\n", TextExtractPar.lp2.keySet().size());
 
 		// create users and access permissions if applicable
 		if (isChatCorpus) {

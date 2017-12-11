@@ -63,8 +63,8 @@ public class LocalSSEwSU<CT_G extends Serializable, RDH extends RewritableDeterm
 				1000 * elapsed / this.server.encryptedMM.size(),
 				this.manager.documents.size());
 			
-			long serverSizeMB = MemoryUtil.deepMemoryUsageOf(this.server) / 1024 / 1024;
-			System.out.printf("SERVER SIZE: %d MB\n", serverSizeMB);
+//			long serverSizeMB = MemoryUtil.deepMemoryUsageOf(this.server) / 1024 / 1024;
+//			System.out.printf("SERVER SIZE: %d MB\n", serverSizeMB);
 			System.out.printf("SERVER UPLOAD TIME: %.2fms\n", 1000 * elapsed);
 		}
 	}

@@ -910,7 +910,7 @@ public class CryptoPrimitives {
 		 * Note that the security parameter depends on which elliptic curve is used; its length is the security parameter's length.
 		 * @param params The elliptic curve to use.
 		 */
-		ECRDH(ECNamedCurveParameterSpec params) { 
+		public ECRDH(ECNamedCurveParameterSpec params) { 
 			this.curveName = params.getName();
 			this.fieldOrder = params.getN();
 			this.generator = params.getG().multiply(new BigInteger(CryptoPrimitives.randomBytes(params.getCurve().getFieldSize())).mod(fieldOrder));

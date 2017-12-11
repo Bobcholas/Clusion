@@ -80,7 +80,7 @@ class User<CT_G extends Serializable, RDH extends RewritableDeterministicHash<CT
 		Collection<String> result = new HashSet<String>(queryResponse.size());
 		for (ServerResponse encryptedResponse : queryResponse) {
 			String metadata = settings.Decrypt(authTokenIDToEncryptionKey.get(ByteBuffer.wrap(encryptedResponse.authTokenID)), encryptedResponse.yCT);
-			result.add(metadata);
+			result.add(metadata.trim());
 		}
 		
 		double elapsed = ((System.nanoTime() - startTime) / nano);

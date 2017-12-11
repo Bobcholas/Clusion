@@ -61,7 +61,7 @@ class LocalManager<CT_G extends Serializable, RDH extends RewritableDeterministi
 		
 		// select master keys (3, or 4 if editing)
 		for (int i = 0; i < masterKeys.length; ++i)
-			masterKeys[i] = CryptoPrimitives.randomBytes(settings.getSecurityParameter());
+			masterKeys[i] = CryptoPrimitives.randomBytes(settings.getSecurityParameter() / 8);
 		
 		for (String documentName : mm.keySet()) {
 			byte[] docID = settings.documentNameToID(documentName);
@@ -111,8 +111,10 @@ class LocalManager<CT_G extends Serializable, RDH extends RewritableDeterministi
 				System.out.printf("Thread #" + (i + 1) + " gets " + tmp.size() + " pairs\n");
 		}
 
-		if (settings.isDebug())
+		if (settings.isDebug()) {
+			System.out.printf("%d total number of document-word pairs\n", listOfDocWordPairs.size());
 			System.out.printf("End of Partitioning\n");
+		}
 
 		Map<CT_G, byte[]> encryptedMM = new HashMap<CT_G, byte[]>();
 		List<Future<Map<CT_G, byte[]>>> futures = new ArrayList<>();
@@ -139,8 +141,8 @@ class LocalManager<CT_G extends Serializable, RDH extends RewritableDeterministi
 		
 
 		if (settings.isDebug()) {
-			long serverSize = MemoryUtil.deepMemoryUsageOf(encryptedMM) / 1024;
-			System.out.printf("Server upload bandwidth: %d kB\n", serverSize);
+			long serverSize = MemoryUtil.deepMemoryUsageOf(encryptedMM) / 1024 / 1024;
+			System.out.printf("Server upload bandwidth: %d MB\n", serverSize);
 		}
 	}
 	
@@ -177,8 +179,8 @@ class LocalManager<CT_G extends Serializable, RDH extends RewritableDeterministi
 
 		// generate keys for user
 		User<CT_G, RDH> newUser = new User<CT_G, RDH>(username, new byte[][] {
-			CryptoPrimitives.randomBytesBuffered(settings.getSecurityParameter()),
-			CryptoPrimitives.randomBytesBuffered(settings.getSecurityParameter())
+			CryptoPrimitives.randomBytesBuffered(settings.getIDLength()),
+			CryptoPrimitives.randomBytesBuffered(settings.getIDLength())
 		}, server);
 		users.put(username, newUser);
 		return newUser;
